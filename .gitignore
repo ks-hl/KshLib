@@ -20,3 +20,4 @@ deploy.cmd
 .flattened-pom.xml
 */.flattened-pom.xml
 */test/
+*/test.db
