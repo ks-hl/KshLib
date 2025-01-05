@@ -24,6 +24,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 public abstract class ConnectionManager implements Closeable, AutoCloseable {
     private final ConnectionPool connectionPool;
@@ -344,7 +345,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
 
     /**
      * A helper method of {@link this#query(String, ResultSetConsumer, long, Object...)}
-     * which retrieves all elements from the ResultSet and maps them to a List of {@link T}
+     * which retrieves all elements from the ResultSet and maps them to a Stream of {@link T}
      * as specified by the resultSetFunction
      *
      * @param statement         The SQL statement
@@ -353,20 +354,20 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      * @param args              SQL parameters
      * @param <T>               The type of object
      */
-    public final <T> List<T> queryAll(String statement, ResultSetFunction<T> resultSetFunction, long wait, Object... args) throws SQLException, BusyException {
+    public final <T> Stream<T> queryAll(String statement, ResultSetFunction<T> resultSetFunction, long wait, Object... args) throws SQLException, BusyException {
         return execute(connection -> {
             return queryAll(connection, statement, resultSetFunction, args);
         }, wait);
     }
 
-    public final <T> List<T> queryAll(Connection connection, String statement, ResultSetFunction<T> resultSetFunction, Object... args) throws SQLException, BusyException {
-        List<T> out = new ArrayList<>();
+    public final <T> Stream<T> queryAll(Connection connection, String statement, ResultSetFunction<T> resultSetFunction, Object... args) throws SQLException, BusyException {
+        Stream.Builder<T> stream = Stream.builder();
         query(connection, statement, rs -> {
             while (rs.next()) {
-                out.add(resultSetFunction.apply(rs));
+                stream.add(resultSetFunction.apply(rs));
             }
         }, args);
-        return out;
+        return stream.build();
     }
 
     public final void setBlob(Connection connection, PreparedStatement statement, int index, byte[] bytes) throws SQLException {
