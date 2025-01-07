@@ -59,11 +59,19 @@ public class TabText {
                 }
                 continue;
             }
-            int thisWidth = widths.getOrDefault(c, 6);
-            if (bold) thisWidth++;
-            width += thisWidth;
+            width += width(c, bold);
         }
         return width;
+    }
+
+    public static int width(String str, boolean bold) {
+        if (str.codePoints().count() == 1) {
+            String c = Character.toString(str.codePointAt(0));
+            int width = widths.getOrDefault(c, 6);
+            if (bold) width++;
+            return width;
+        }
+        return str.codePoints().mapToObj(Character::toString).map(s -> width(s, bold)).reduce(Integer::sum).orElse(0);
     }
 
     public static String parseSpacing(String line, int size, AlignDirection align) {

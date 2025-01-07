@@ -1,5 +1,6 @@
 package dev.kshl.kshlib.velocity;
 
+import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ConsoleCommandSource;
@@ -87,5 +88,12 @@ public class BaseVelocityPlugin implements IBaseVelocityPlugin {
             return UUIDHelper.ZERO;
         }
         throw new IllegalArgumentException();
+    }
+
+    protected CommandMeta getMeta(String command, String... aliases) {
+        CommandMeta.Builder builder = getProxy().getCommandManager().metaBuilder(command);
+        builder.plugin(this);
+        builder.aliases(aliases);
+        return builder.build();
     }
 }
