@@ -1,8 +1,7 @@
 package dev.kshl.kshlib.misc;
 
-import javax.annotation.Nullable;
-
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -68,6 +67,16 @@ public class FileUtil {
         StringBuilder sb = new StringBuilder();
         for (byte b : md.digest()) sb.append(String.format("%02x", b));
         return sb.toString();
+    }
+
+    public static boolean delete(File file) {
+        if (file.isDirectory()) {
+            //noinspection DataFlowIssue
+            for (File subFile : file.listFiles()) {
+                delete(subFile);
+            }
+        }
+        return file.delete();
     }
 
     public static class CSV {
