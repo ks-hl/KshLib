@@ -5,9 +5,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
-import java.time.Duration;
 
 public class OpenWebUIAPI extends NetUtilInterval {
     /*
@@ -44,11 +42,11 @@ public class OpenWebUIAPI extends NetUtilInterval {
         try {
             JSONObject json = new JSONObject();
             json.put("stream", false);
-            json.put("model", llmRequest.model);
-            json.put("messages", new JSONArray().put(new JSONMessage("user", llmRequest.content)));
+            json.put("model", llmRequest.getModel());
+            json.put("messages", new JSONArray().put(new JSONMessage("user", llmRequest.getContent())));
             json.put("options", new JSONObject()
-                    .put("seed", llmRequest.seed)
-                    .put("num_ctx", llmRequest.contextLength)
+                    .put("seed", llmRequest.getSeed())
+                    .put("num_ctx", llmRequest.getContextLength())
             );
             NetUtil.Request request = new NetUtil.Request(adaptSuffixAndRateLimit("ollama/api/chat"), HTTPRequestType.POST, false);
             request.body(json.toString());
@@ -57,7 +55,7 @@ public class OpenWebUIAPI extends NetUtilInterval {
                     "cookie", "token=" + key,
                     "content-type", "application/json"
             );
-            request.timeout(llmRequest.timeout);
+            request.timeout(llmRequest.getTimeout());
             var response = request.request();
             if (response.getResponseCode().isError()) {
                 throw new IOException(response.getResponseCode() + " (" + response.getResponseCode().getCode() + "): " + response.getBody());
@@ -74,36 +72,6 @@ public class OpenWebUIAPI extends NetUtilInterval {
             return message;
         } catch (JSONException e) {
             throw new JSONException("Body: " + bodyResponse, e);
-        }
-    }
-
-    public static class LLMRequest {
-
-        private final String model;
-        private final String content;
-
-        private @Nullable Long seed;
-        private @Nullable Integer contextLength;
-        private @Nullable Duration timeout;
-
-        public LLMRequest(String model, String content) {
-            this.model = model;
-            this.content = content;
-        }
-
-        public LLMRequest seed(@Nullable Long seed) {
-            this.seed = seed;
-            return this;
-        }
-
-        public LLMRequest contextLength(@Nullable Integer contextLength) {
-            this.contextLength = contextLength;
-            return this;
-        }
-
-        public LLMRequest timeout(@Nullable Duration timeout) {
-            this.timeout = timeout;
-            return this;
         }
     }
 
