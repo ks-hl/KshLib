@@ -21,3 +21,4 @@ deploy.cmd
 */.flattened-pom.xml
 */test/
 */test.db
+.env
