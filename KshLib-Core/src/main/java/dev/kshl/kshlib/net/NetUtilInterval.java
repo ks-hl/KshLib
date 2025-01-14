@@ -116,7 +116,7 @@ public class NetUtilInterval {
         lastAPIRequest = System.currentTimeMillis();
     }
 
-    private String adaptSuffixAndRateLimit(String suffix) {
+    protected String adaptSuffixAndRateLimit(String suffix) {
         rateLimit();
         String url = endpoint;
         if (suffix == null) return endpoint;

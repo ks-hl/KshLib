@@ -1,11 +1,10 @@
 package dev.kshl.kshlib.net;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -16,6 +15,7 @@ import java.net.URL;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -142,9 +142,10 @@ public class NetUtil {
     public static final class Request {
         private String url;
         private final HTTPRequestType requestType;
-        private final @Nullable String body;
+        private @Nullable String body;
         private final boolean followRedirects;
-        private final String[] headers;
+        private String[] headers;
+        private Duration timeout;
 
         public Request(String url, HTTPRequestType requestType, @Nullable String body, boolean followRedirects, String... headers) {
             this.url = url;
@@ -152,6 +153,12 @@ public class NetUtil {
             this.body = body;
             this.followRedirects = followRedirects;
             this.headers = headers;
+        }
+
+        public Request(String url, HTTPRequestType requestType, boolean followRedirects) {
+            this.url = url;
+            this.requestType = requestType;
+            this.followRedirects = followRedirects;
         }
 
         public Request(String url, HTTPRequestType requestType, @Nullable String body, boolean followRedirects, Map<String, String> headers) {
@@ -168,7 +175,6 @@ public class NetUtil {
             return followRedirects;
         }
 
-        @SuppressWarnings("unused")
         public Response request() throws IOException {
             Response response = request_();
             if (!followRedirects) return response;
@@ -205,14 +211,14 @@ public class NetUtil {
 
         @Nonnull
         private Response request_() throws IOException {
-            HttpClient client = HttpClient.newHttpClient();
+            if (timeout == null) timeout = Duration.ofSeconds(3);
+            HttpClient client = HttpClient.newBuilder().connectTimeout(timeout).build();
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().uri(URI.create(getURL())).setHeader("User-Agent", "KSHLib");
 
             if (getHeaders() != null && getHeaders().length > 0) requestBuilder.headers(getHeaders());
 
             switch (getRequestType()) {
-                case POST ->
-                        requestBuilder.POST(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
+                case POST -> requestBuilder.POST(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
                 case PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
                 default -> {
                     if (getBody() != null)
@@ -249,6 +255,21 @@ public class NetUtil {
 
         public String[] getHeaders() {
             return headers;
+        }
+
+        public Request timeout(Duration timeout) {
+            this.timeout = timeout;
+            return this;
+        }
+
+        public Request headers(String... headers) {
+            this.headers = headers;
+            return this;
+        }
+
+        public Request body(String body) {
+            this.body = body;
+            return this;
         }
     }
 
