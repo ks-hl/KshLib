@@ -8,22 +8,6 @@ import org.json.JSONObject;
 import java.io.IOException;
 
 public class OpenWebUIAPI extends NetUtilInterval {
-    /*
-    curl 'https://ai.snam.dev/ollama/api/chat' \
-  -H 'accept: application/json' \
-  -H 'accept-language: en-US,en;q=0.9' \
-  -H 'origin: https://ai.snam.dev' \
-  -H 'priority: u=1, i' \
-  -H 'referer: https://ai.snam.dev/?temporary-chat=true' \
-  -H 'sec-ch-ua: "Chromium";v="131", "Not_A Brand";v="24"' \
-  -H 'sec-ch-ua-mobile: ?0' \
-  -H 'sec-ch-ua-platform: "Linux"' \
-  -H 'sec-fetch-dest: empty' \
-  -H 'sec-fetch-mode: cors' \
-  -H 'sec-fetch-site: same-origin' \
-  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' \
-  --data-raw '{"stream":false,"model":"qwen2.5:72b-instruct-q4_K_S",,"options":{},"chat_id":"local"}'
-     */
 
     private static final String FORMAT = "";
     private final String url;
