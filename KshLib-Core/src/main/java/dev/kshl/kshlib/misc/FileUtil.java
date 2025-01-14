@@ -1,5 +1,7 @@
 package dev.kshl.kshlib.misc;
 
+import dev.kshl.kshlib.function.ThrowingConsumer;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.File;
@@ -70,13 +72,32 @@ public class FileUtil {
     }
 
     public static boolean delete(File file) {
+        if (!file.exists()) return false;
+
+        walkFileTree(file, -1, file1 -> {
+            if (file1.isFile()) file1.delete();
+        });
+        walkFileTree(file, -1, File::delete);
+
+        return !file.exists();
+    }
+
+//    public static void walkFileTree(File file, int depthLimit, Consumer<File> fileConsumer) throws IOException {
+//        walkFileTree(file, depthLimit, (ThrowingConsumer<File, IOException>) fileConsumer::accept);
+//    }
+
+    public static <E extends Exception> void walkFileTree(File file, int depthLimit, ThrowingConsumer<File, E> fileConsumer) throws E {
+        fileConsumer.accept(file);
+
+        if (depthLimit == 0) return;
+
         if (file.isDirectory()) {
-            //noinspection DataFlowIssue
-            for (File subFile : file.listFiles()) {
-                delete(subFile);
+            File[] files = file.listFiles();
+            if (files == null) return;
+            for (File subFile : files) {
+                walkFileTree(subFile, depthLimit - 1, fileConsumer);
             }
         }
-        return file.delete();
     }
 
     public static class CSV {

@@ -2,8 +2,8 @@ package dev.kshl.kshlib.net;
 
 import dev.kshl.kshlib.concurrent.ConcurrentReference;
 import dev.kshl.kshlib.exceptions.BusyException;
-import javax.annotation.Nonnull;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -16,6 +16,7 @@ public class NetUtilInterval {
     private final ConcurrentReference<Object> lock = new ConcurrentReference<>(new Object());
     private final boolean followRedirects;
     private long lastAPIRequest;
+    private long cooldownUntil;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     public NetUtilInterval(String endpoint, long minimumInterval) {
@@ -101,12 +102,16 @@ public class NetUtilInterval {
     private void rateLimit() {
         long time = System.currentTimeMillis();
         long timeSinceLast = time - lastAPIRequest;
-        if (timeSinceLast < minimumInterval) {
-            try {
+        try {
+            if (timeSinceLast < minimumInterval) {
                 Thread.sleep(minimumInterval - timeSinceLast);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
             }
+            time = System.currentTimeMillis();
+            if (time < cooldownUntil) {
+                Thread.sleep(cooldownUntil - time);
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
         lastAPIRequest = System.currentTimeMillis();
     }
@@ -124,5 +129,9 @@ public class NetUtilInterval {
     }
 
     public void onResponse(NetUtil.Request request, NetUtil.Response response) {
+    }
+
+    public void setCooldownUntil(long until) {
+        this.cooldownUntil = until;
     }
 }

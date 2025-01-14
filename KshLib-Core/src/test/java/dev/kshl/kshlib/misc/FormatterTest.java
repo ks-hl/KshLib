@@ -11,6 +11,16 @@ public class FormatterTest {
     @Test
     public void testCapitalizeFirstLetter() {
         assertEquals("Hello There!How Are You?D9That's Good!", Formatter.capitalizeFirstLetters("hello there!hOw are you?d9thAT's good!"));
+        assertEquals("I Am a Dolphin!", Formatter.capitalizeFirstLetters("i am a dolphin!"));
+        assertEquals("A Dolphin!", Formatter.capitalizeFirstLetters("a dolphin!"));
+        assertEquals("And", Formatter.capitalizeFirstLetters("AND"));
+        assertEquals("Me and", Formatter.capitalizeFirstLetters("ME AND"));
+
+        assertEquals("Hello There!How Are You?D9That's Good!", Formatter.capitalizeFirstLettersAll("hello there!hOw are you?d9thAT's good!"));
+        assertEquals("I Am A Dolphin!", Formatter.capitalizeFirstLettersAll("i am a dolphin!"));
+        assertEquals("A Dolphin!", Formatter.capitalizeFirstLettersAll("a dolphin!"));
+        assertEquals("And", Formatter.capitalizeFirstLettersAll("AND"));
+        assertEquals("Me And", Formatter.capitalizeFirstLettersAll("ME AND"));
     }
 
     @Test

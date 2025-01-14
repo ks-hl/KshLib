@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.vector;
 
 import java.util.Objects;
+import java.util.Random;
 
 public class Vector {
     private double x;
@@ -14,6 +15,13 @@ public class Vector {
         this.x = x;
         this.y = y;
         this.z = z;
+    }
+
+    public Vector(Random random) {
+        this.x = random.nextDouble() - 0.5;
+        this.y = random.nextDouble() - 0.5;
+        this.z = random.nextDouble() - 0.5;
+        this.normalize();
     }
 
     public static double square(double d) {

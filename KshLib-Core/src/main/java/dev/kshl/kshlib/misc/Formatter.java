@@ -5,6 +5,7 @@ import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -21,7 +22,22 @@ public class Formatter {
         return name + "'s";
     }
 
+    private static final Set<String> NO_CAPITALIZE = Set.of("a", "and", "as", "at", "but", "by", "down", "for", "from", "if", "in", "into", "like", "near", "nor", "of", "off", "on", "once", "onto", "or", "over", "past", "so", "than", "that", "to", "upon", "when", "with", "yet");
+    private static final Pattern WORD_PATTERN = Pattern.compile("[a-zA-Z']+");
+
     public static String capitalizeFirstLetters(String string) {
+        char[] chars = string.toLowerCase().toCharArray();
+        Matcher matcher = WORD_PATTERN.matcher(string.toLowerCase());
+        boolean first = true;
+        while (matcher.find()) {
+            if (first) first = false;
+            else if (NO_CAPITALIZE.contains(matcher.group())) continue;
+            chars[matcher.start()] = matcher.group().toUpperCase().charAt(0);
+        }
+        return String.valueOf(chars);
+    }
+
+    public static String capitalizeFirstLettersAll(String string) {
         StringBuilder out = new StringBuilder();
         boolean nonLetter = true;
         for (char c : string.toCharArray()) {

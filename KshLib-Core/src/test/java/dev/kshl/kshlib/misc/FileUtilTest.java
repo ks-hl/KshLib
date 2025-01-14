@@ -6,6 +6,8 @@ import java.io.File;
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class FileUtilTest {
     @Test
@@ -16,5 +18,16 @@ public class FileUtilTest {
         FileUtil.write(file, content);
         assertEquals(content, FileUtil.read(file));
         assertEquals("9b7a89a068576f5d676de2f840c0b880dda885884178753819240a5176cdadd3", FileUtil.getSHA256Hash(file));
+    }
+
+    @Test
+    public void testDelete() throws IOException {
+        File file = new File("test/test1/test2/file.txt");
+        boolean ignored = file.getParentFile().mkdirs();
+        FileUtil.write(file, "");
+        assertTrue(file.exists());
+
+        FileUtil.delete(new File("test"));
+        assertFalse(file.exists());
     }
 }
