@@ -1,5 +1,8 @@
-package dev.kshl.kshlib.net;
+package dev.kshl.kshlib.net.llm;
 
+import dev.kshl.kshlib.net.HTTPRequestType;
+import dev.kshl.kshlib.net.NetUtil;
+import dev.kshl.kshlib.net.NetUtilInterval;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.json.JSONArray;
 import org.json.JSONException;

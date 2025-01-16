@@ -1,4 +1,6 @@
-package dev.kshl.kshlib.net;
+package dev.kshl.kshlib.net.llm;
+
+import org.json.JSONObject;
 
 import javax.annotation.Nullable;
 import java.time.Duration;
@@ -53,5 +55,22 @@ public class LLMRequest {
     @Nullable
     public Duration getTimeout() {
         return timeout;
+    }
+
+    public JSONObject toJSON() {
+        JSONObject json = new JSONObject();
+        json.put("stream", false);
+        json.put("model", getModel());
+        putContent(json);
+        json.put("options", new JSONObject()
+                .put("seed", getSeed())
+                .put("num_ctx", getContextLength())
+        );
+
+        return json;
+    }
+
+    protected void putContent(JSONObject json) {
+        json.put("prompt", getContent());
     }
 }

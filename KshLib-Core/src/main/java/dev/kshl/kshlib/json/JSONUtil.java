@@ -10,6 +10,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class JSONUtil {
 
@@ -46,5 +48,9 @@ public class JSONUtil {
             if (!Objects.equals(a.get(key), b.opt(key))) return false;
         }
         return true;
+    }
+
+    public static Stream<Object> stream(JSONArray jsonArray) {
+        return StreamSupport.stream(jsonArray.spliterator(), false);
     }
 }

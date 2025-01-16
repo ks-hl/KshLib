@@ -1,0 +1,46 @@
+package dev.kshl.kshlib.net.llm;
+
+import dev.kshl.kshlib.json.JSONUtil;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.List;
+
+/**
+ * @param model             The model used to generate the response
+ * @param load_duration     Time taken to load the model into memory
+ * @param prompt_eval_count Input token count
+ * @param total_duration    Time to load, ingest, and generate
+ * @param embeddings        The embeddings
+ */
+public record EmbedResponse(
+        String model,
+        Duration load_duration,
+        int prompt_eval_count,
+        Duration total_duration,
+        List<List<Double>> embeddings
+) {
+    static EmbedResponse fromJSON(JSONObject jsonObject) {
+        String model = jsonObject.getString("model");
+
+        Duration load_duration = Duration.ofNanos(jsonObject.getLong("load_duration"));
+
+        int prompt_eval_count = jsonObject.getInt("prompt_eval_count");
+
+        Duration total_duration = Duration.ofNanos(jsonObject.getLong("total_duration"));
+
+        List<List<Double>> embeddings = JSONUtil.stream(jsonObject.getJSONArray("embeddings"))
+                .map(o -> (JSONArray) o)
+                .map(o -> JSONUtil.stream(o)
+                        .map(o1 -> ((BigDecimal) o1).doubleValue()).toList()
+                ).toList();
+
+        return new EmbedResponse(model, load_duration, prompt_eval_count, total_duration, embeddings);
+    }
+
+    public double getTokensPerSecond() {
+        return prompt_eval_count() * 1000000000D / total_duration().minus(load_duration()).toNanos();
+    }
+}
