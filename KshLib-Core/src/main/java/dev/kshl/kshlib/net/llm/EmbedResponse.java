@@ -20,7 +20,7 @@ public record EmbedResponse(
         Duration load_duration,
         int prompt_eval_count,
         Duration total_duration,
-        List<List<Double>> embeddings
+        Embeddings embeddings
 ) {
     static EmbedResponse fromJSON(JSONObject jsonObject) {
         String model = jsonObject.getString("model");
@@ -31,11 +31,7 @@ public record EmbedResponse(
 
         Duration total_duration = Duration.ofNanos(jsonObject.getLong("total_duration"));
 
-        List<List<Double>> embeddings = JSONUtil.stream(jsonObject.getJSONArray("embeddings"))
-                .map(o -> (JSONArray) o)
-                .map(o -> JSONUtil.stream(o)
-                        .map(o1 -> ((BigDecimal) o1).doubleValue()).toList()
-                ).toList();
+        Embeddings embeddings = Embeddings.fromJSON(jsonObject.getJSONArray("embeddings"));
 
         return new EmbedResponse(model, load_duration, prompt_eval_count, total_duration, embeddings);
     }

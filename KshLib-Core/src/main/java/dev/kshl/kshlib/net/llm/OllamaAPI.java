@@ -1,5 +1,6 @@
 package dev.kshl.kshlib.net.llm;
 
+import dev.kshl.kshlib.function.ThrowingConsumer;
 import dev.kshl.kshlib.misc.TimeUtil;
 import dev.kshl.kshlib.net.HTTPRequestType;
 import dev.kshl.kshlib.net.NetUtil;
@@ -9,6 +10,8 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.time.ZoneId;
+import java.util.HashMap;
+import java.util.Map;
 
 public class OllamaAPI extends NetUtilInterval {
 
@@ -53,13 +56,29 @@ public class OllamaAPI extends NetUtilInterval {
     }
 
     public static void main(String[] args) throws IOException {
-        embed("What's your favorite color?");
-        embed("What is your favorite colorrr??");
-        embed("What's your favorite color?What's your favorite color?What's your favorite color?What's your favorite color?What's your favorite color?What's your favorite color?");
+        Map<Embeddings, String> documents = new HashMap<>();
+        ThrowingConsumer<String, IOException> consumeDocument = doc -> {
+            documents.put(embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings(), doc);
+        };
 
+        consumeDocument.accept("My favorite color is purple. That's my favorite color because I like it.");
+        consumeDocument.accept("My favorite animal is a giraffe. I like this animal because it has a long neck.");
+
+        ThrowingConsumer<String, IOException> consumeQuery = query -> {
+            System.out.println("SEARCHING: " + query);
+            Embeddings embeddings = embed(query, NomicEmbedRequest.Function.SEARCH_QUERY).embeddings();
+            for (Map.Entry<Embeddings, String> entry : documents.entrySet()) {
+                System.out.println(entry.getKey().compareTo(embeddings) + ": " + entry.getValue());
+            }
+        };
+        consumeQuery.accept("What's your favorite color?");
+        consumeQuery.accept("What's your favorite animal?");
+        consumeQuery.accept("what is your favourite collourrr??");
+
+        System.out.println("\n\n");
 
         LLMResponse response = new OllamaAPI("http://10.0.70.105:11434/").generate(new LLMRequest("qwen2.5:3b",
-                "What's your favorite color?"));
+                "Respond only with the corrected text. Correct the spelling in this text: what is your favourite collourrr??"));
         System.out.println(response.getTokensPerSecond() + " t/s");
         System.out.println(response.created_at().toInstant().toEpochMilli());
         System.out.println(System.currentTimeMillis());
@@ -67,9 +86,7 @@ public class OllamaAPI extends NetUtilInterval {
         System.out.println(response.response());
     }
 
-    private static void embed(String str) throws IOException {
-        EmbedResponse embedResponse = new OllamaAPI("http://10.0.70.105:11434/").embeddings(new EmbedRequest("nomic-embed-text", str));
-
-        System.out.println(embedResponse.getTokensPerSecond() + "t/s: " + embedResponse.embeddings());
+    private static EmbedResponse embed(String str, NomicEmbedRequest.Function function) throws IOException {
+        return new OllamaAPI("http://10.0.70.105:11434/").embeddings(new NomicEmbedRequest(str, function));
     }
 }
