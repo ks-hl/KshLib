@@ -7,21 +7,24 @@ import java.util.List;
 
 public class FloatEmbeddings extends AbstractEmbeddings {
 
-    private final List<Float> embeddings;
+    private final float[] embeddings;
 
     public FloatEmbeddings(List<Float> embeddings) {
-        this.embeddings = embeddings.stream().toList();
+        this.embeddings = new float[embeddings.size()];
+        for (int i = 0; i < this.embeddings.length; i++) {
+            this.embeddings[i] = (embeddings.get(i));
+        }
     }
 
     @Override
     protected AbstractEmbeddings construct(List<Float> embeddings) {
-        return new FloatEmbeddings(embeddings);
+        return new ShortEmbeddings(embeddings);
     }
 
     @Override
     public byte[] getBytes() {
         ByteBuffer buffer = ByteBuffer.allocate(size() * 4);
-        for (Float embedding : this) {
+        for (Float embedding : this.embeddings) {
             buffer.putFloat(embedding);
         }
         return buffer.array();
@@ -29,22 +32,23 @@ public class FloatEmbeddings extends AbstractEmbeddings {
 
     @Override
     public int size() {
-        return this.embeddings.size();
+        return this.embeddings.length;
     }
 
     @Override
     public Float get(int index) {
-        return this.embeddings.get(index);
+        return this.embeddings[index];
     }
 
     @Override
     public boolean isEmpty() {
-        return this.embeddings.isEmpty();
+        return size() == 0;
     }
 
     @Override
     @Nonnull
     public Iterator<Float> iterator() {
-        return this.embeddings.iterator();
+        return new FloatIterator(this.embeddings);
     }
+
 }

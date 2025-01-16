@@ -59,7 +59,7 @@ public class OllamaAPI extends NetUtilInterval {
     public static void main(String[] args) throws IOException {
         Map<AbstractEmbeddings, String> documents = new HashMap<>();
         ThrowingConsumer<String, IOException> consumeDocument = doc -> {
-            AbstractEmbeddings embeddings = embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings();
+            AbstractEmbeddings embeddings = embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings().toByteEmbeddings();
 
             System.out.println(doc + "\n" + embeddings.size() + embeddings.toJSON());
             documents.put(embeddings, doc);

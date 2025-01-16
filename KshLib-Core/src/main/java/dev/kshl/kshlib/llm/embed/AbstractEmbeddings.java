@@ -61,6 +61,18 @@ public abstract class AbstractEmbeddings extends AbstractList<Float> {
         return dotProduct / Math.sqrt(normA * normB);
     }
 
+    public ShortEmbeddings toShortEmbeddings() {
+        if (this instanceof ShortEmbeddings shortEmbeddings) return shortEmbeddings;
+
+        return new ShortEmbeddings(this);
+    }
+
+    public ByteEmbeddings toByteEmbeddings() {
+        if (this instanceof ByteEmbeddings byteEmbeddings) return byteEmbeddings;
+
+        return new ByteEmbeddings(this);
+    }
+
     protected abstract AbstractEmbeddings construct(List<Float> embeddings);
 
     public abstract byte[] getBytes();
