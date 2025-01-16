@@ -416,7 +416,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     @SuppressWarnings("unused")
-    protected final int count(Connection connection, String table) throws SQLException {
+    public final int count(Connection connection, String table) throws SQLException {
         String stmtStr = getCountStmt() + table;
         debugSQLStatement(stmtStr, table);
         return execute(connection, stmtStr, preparedStatement -> {

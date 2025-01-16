@@ -1,10 +1,11 @@
 package dev.kshl.kshlib.net.llm;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ThrowingConsumer;
 import dev.kshl.kshlib.misc.BasicProfiler;
-import dev.kshl.kshlib.misc.FileUtil;
 import dev.kshl.kshlib.misc.Formatter;
 import dev.kshl.kshlib.misc.Timer;
+import dev.kshl.kshlib.sql.ConnectionFunction;
 import dev.kshl.kshlib.sql.ConnectionManager;
 import dev.kshl.kshlib.sql.DatabaseTest;
 import org.json.JSONArray;
@@ -12,10 +13,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -131,7 +132,7 @@ public class TestEmbeddings {
     }
 
     @DatabaseTest
-    public void testVectorStorage(ConnectionManager connectionManager) throws SQLException, BusyException {
+    public void testVectorStorage(ConnectionManager connectionManager) throws SQLException, BusyException, IOException, ClassNotFoundException {
         if (connectionManager.isMySQL()) return;
 
         connectionManager.execute("""
@@ -206,70 +207,112 @@ public class TestEmbeddings {
         System.out.println(timer);
     }
 
-    private static Map<Embeddings, Embeddings> loadPCAEmbeddings() {
-        File file = new File("src/test/resources/embeddings.csv");
-        Map<Embeddings, Embeddings> out = new HashMap<>();
-        if (file.exists()) {
-            String[] parts = FileUtil.read(file).split("[\n\r;]+");
-            for (int i = 0; i < parts.length; i += 2) {
-                String embedding768 = parts[i];
-                String embedding32 = parts[i + 1];
-
-                out.put(Embeddings.fromBase64(embedding768), Embeddings.fromBase64(embedding32));
+    private static Map<Embeddings, Embeddings> loadPCAEmbeddings() throws SQLException, IOException, ClassNotFoundException, BusyException {
+        File sqliteFile = new File("src/test/resources/embeddings.db");
+        try (ConnectionManager connectionManager = new ConnectionManager(sqliteFile) {
+            @Override
+            protected void init(Connection connection) throws SQLException {
+                execute(connection, """
+                        CREATE TABLE IF NOT EXISTS embeddings (
+                            id INTEGER PRIMARY KEY,
+                            v768 BLOB NOT NULL,
+                            v32 BLOB NOT NULL
+                        )""");
             }
-        } else {
-            Random random = new Random(982654989);
-            int count = 10000;
-            int threadCount = 10;
-            List<Thread> threads = new ArrayList<>();
-            for (int threadN_ = 0; threadN_ < threadCount; threadN_++) {
-                final int threadN = threadN_;
-                Thread thread = new Thread(() -> {
-                    StringBuilder outString = new StringBuilder();
-                    for (int i = 0; i < count / threadCount; i++) {
-                        Embeddings embedding768 = newRandomEmbeddings(384, random);
-                        Embeddings embedding32 = embedding768.applyPCA(32);
-                        synchronized (file) {
-                            outString.append(embedding768.toBase64()).append(";");
-                            outString.append(embedding32.toBase64()).append("\n");
 
-                            if (outString.length() > 8_000_000) {
-                                try (FileWriter fileWriter = new FileWriter(file, true)) {
-                                    fileWriter.write(outString.toString().replace(" ", ""));
-                                    fileWriter.flush();
-                                    outString = new StringBuilder();
-                                } catch (IOException e) {
+            @Override
+            protected void debug(String line) {
+
+            }
+
+            @Override
+            protected boolean checkAsync() {
+                return true;
+            }
+
+            @Override
+            protected boolean isDebug() {
+                return false;
+            }
+        }) {
+            connectionManager.init();
+            boolean exists = connectionManager.execute((ConnectionFunction<Boolean>) connection -> connectionManager.count(connection, "embeddings") > 0, 3000L);
+
+            Map<Embeddings, Embeddings> out = new HashMap<>();
+            if (exists) {
+                connectionManager.query("""
+                         SELECT v768,v32
+                         FROM embeddings
+                        """, rs -> {
+                    while (rs.next()) {
+                        Embeddings v768 = new Embeddings(connectionManager.getBlob(rs, 1));
+                        Embeddings v32 = new Embeddings(connectionManager.getBlob(rs, 2));
+
+                        out.put(v768, v32);
+                    }
+                }, 3000L);
+            } else {
+                Random random = new Random(982654989);
+                int count = 10000;
+                int threadCount = 10;
+                List<Thread> threads = new ArrayList<>();
+                ThrowingConsumer<Map<Embeddings, Embeddings>, Exception> commit = map -> {
+                    connectionManager.execute(connection -> {
+                        try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO embeddings (v768,v32) VALUES " + ("(?,?),".repeat(map.size() - 1) + "(?,?)"))) {
+                            int i1 = 0;
+                            for (Map.Entry<Embeddings, Embeddings> embed : map.entrySet()) {
+                                int index = (i1++) * 2 + 1;
+                                connectionManager.setBlob(connection, preparedStatement, index, embed.getKey().getBytes());
+                                connectionManager.setBlob(connection, preparedStatement, index + 1, embed.getValue().getBytes());
+                            }
+                            preparedStatement.execute();
+                        }
+                    }, 3000L);
+
+                    map.clear();
+                };
+                for (int threadN_ = 0; threadN_ < threadCount; threadN_++) {
+                    final int threadN = threadN_;
+                    Thread thread = new Thread(() -> {
+                        Map<Embeddings, Embeddings> embeddingsMap = new HashMap<>();
+                        for (int i = 0; i < count / threadCount; i++) {
+                            Embeddings embedding768 = newRandomEmbeddings(384, random);
+                            Embeddings embedding32 = embedding768.applyPCA(32);
+
+                            embeddingsMap.put(embedding768, embedding32);
+
+                            if (embeddingsMap.size() >= 100) {
+                                try {
+                                    commit.accept(embeddingsMap);
+                                } catch (Exception e) {
                                     e.printStackTrace();
                                 }
                             }
-                        }
 
-                        if (threadN == 0 && i % 100 == 0) {
-                            System.out.println("Generating test embeddings: " + Formatter.toString(i * 100 * threadCount / (double) count, 2, true, true) + "%");
+                            if (threadN == 0 && i % 100 == 0) {
+                                System.out.println("Generating test embeddings: " + Formatter.toString(i * 100 * threadCount / (double) count, 2, true, true) + "%");
+                            }
                         }
-                    }
-                    if (!outString.isEmpty()) {
-                        try (FileWriter fileWriter = new FileWriter(file, true)) {
-                            fileWriter.write(outString.toString().replace(" ", ""));
-                            fileWriter.flush();
-                        } catch (IOException e) {
+                        try {
+                            commit.accept(embeddingsMap);
+                        } catch (Exception e) {
                             e.printStackTrace();
                         }
+                    });
+                    threads.add(thread);
+                    thread.start();
+                }
+                for (Thread thread : threads) {
+                    try {
+                        thread.join();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
                     }
-                });
-                threads.add(thread);
-                thread.start();
-            }
-            for (Thread thread : threads) {
-                try {
-                    thread.join();
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
                 }
             }
-        }
 
-        return out;
+            return out;
+        }
     }
 
     private static Embeddings newRandomEmbeddings(int length, Random random) {
