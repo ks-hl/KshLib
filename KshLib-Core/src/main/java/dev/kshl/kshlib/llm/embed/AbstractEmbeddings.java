@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.llm;
+package dev.kshl.kshlib.llm.embed;
 
 import dev.kshl.kshlib.json.JSONCollector;
 import org.json.JSONArray;
@@ -88,7 +88,7 @@ public abstract class AbstractEmbeddings {
     }
 
     public static AbstractEmbeddings fromBase64(String base64) {
-        return new AbstractEmbeddings(Base64.getDecoder().decode(base64));
+        return construct(Base64.getDecoder().decode(base64));
     }
 
     @Override
@@ -180,6 +180,8 @@ public abstract class AbstractEmbeddings {
             embeddings.add(embedding);
             if (embeddings.size() >= numComponents) break;
         }
-        return new AbstractEmbeddings(embeddings);
+        return construct(embeddings);
     }
+
+    protected abstract AbstractEmbeddings construct(List<Float> embeddings);
 }

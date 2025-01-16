@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.llm;
 
 import dev.kshl.kshlib.function.ThrowingConsumer;
+import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
 import dev.kshl.kshlib.misc.TimeUtil;
 import dev.kshl.kshlib.net.HTTPRequestType;
 import dev.kshl.kshlib.net.NetUtil;

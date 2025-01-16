@@ -1,5 +1,6 @@
 package dev.kshl.kshlib.llm;
 
+import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
 import org.json.JSONObject;
 
 import java.time.Duration;

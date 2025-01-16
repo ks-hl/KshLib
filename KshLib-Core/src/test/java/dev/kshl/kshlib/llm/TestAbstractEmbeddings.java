@@ -1,6 +1,6 @@
 package dev.kshl.kshlib.llm;
 
-import dev.kshl.kshlib.llm.AbstractEmbeddings;
+import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
 import org.json.JSONArray;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
