@@ -108,7 +108,7 @@ public class Embeddings {
      */
     public double compareTo(Embeddings other) {
         if (this.embeddings.size() != other.embeddings.size()) {
-            throw new IllegalArgumentException("Embeddings must have the same number of elements");
+            throw new IllegalArgumentException("Embeddings must have the same number of elements. " + this.embeddings.size() + "!=" + other.embeddings.size());
         }
         if (this.embeddings.isEmpty()) {
             throw new IllegalArgumentException("Embeddings cannot be empty");
@@ -335,5 +335,51 @@ public class Embeddings {
             v[k][l] = h + s * (g - h * tau);
         }
     }
+    /**
+     * Project the embedding to a specified size using weights and bias.
+     *
+     * @param toSize The desired size of the projected embedding
+     * @return A new Embeddings object containing the projected embedding
+     */
+    public Embeddings projectTo(int toSize) {
+        final int fromSize = this.embeddings.size();
 
+        // Initialize weights for projection (W)
+        List<List<Float>> W = initializeWeights(fromSize, toSize);
+
+        // Initialize bias (b)
+        List<Float> b = initializeBias(toSize);
+
+        // Project the input using the weights and add bias
+        List<Float> projected = new ArrayList<>(toSize);
+        for (int i = 0; i < toSize; i++) {
+            float sum = 0;
+            for (int j = 0; j < fromSize; j++) {
+                sum += embeddings.get(j) * W.get(j).get(i);
+            }
+            projected.add(sum + b.get(i)); // Add bias
+        }
+
+        return new Embeddings(projected);
+    }
+
+    private List<List<Float>> initializeWeights(int rows, int cols) {
+        List<List<Float>> weights = new ArrayList<>(rows);
+        for (int i = 0; i < rows; i++) {
+            List<Float> row = new ArrayList<>(cols);
+            for (int j = 0; j < cols; j++) {
+                row.add((float) Math.random()); // Random initialization
+            }
+            weights.add(row);
+        }
+        return weights;
+    }
+
+    private List<Float> initializeBias(int size) {
+        List<Float> bias = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            bias.add((float) Math.random()); // Random initialization
+        }
+        return bias;
+    }
 }

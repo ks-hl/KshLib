@@ -10,6 +10,7 @@ import dev.kshl.kshlib.sql.ConnectionManager;
 import dev.kshl.kshlib.sql.DatabaseTest;
 import org.json.JSONArray;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -30,20 +31,23 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestEmbeddings {
-    private List<Float> testData;
-    private Embeddings embeddings;
+    private List<Float> testData123456;
+    private Embeddings embeddings123456;
+    private Embeddings embeddingsRandom100;
 
     @BeforeEach
     public void setUp() {
-        testData = Arrays.asList(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f);
-        embeddings = new Embeddings(testData);
+        testData123456 = List.of(1f, 2f, 3f, 4f, 5f, 6f);
+        embeddings123456 = new Embeddings(testData123456);
+        embeddingsRandom100 = newRandomEmbeddings(100, new Random(329439627885943525L));
     }
 
     @Test
     public void testConstructor() {
-        assertEquals(Arrays.asList(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f), embeddings.getEmbeddings());
+        assertEquals(Arrays.asList(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f), embeddings123456.getEmbeddings());
     }
 
     @Test
@@ -53,7 +57,7 @@ public class TestEmbeddings {
         jsonArray.put(new JSONArray().put(4.0).put(5.0).put(6.0));
 
         Embeddings embeddingsFromJson = new Embeddings(jsonArray);
-        assertEquals(embeddings, embeddingsFromJson);
+        assertEquals(embeddings123456, embeddingsFromJson);
     }
 
     @Test
@@ -66,69 +70,68 @@ public class TestEmbeddings {
         expectedJson.put(new BigDecimal("5.0"));
         expectedJson.put(new BigDecimal("6.0"));
 
-        JSONArray result = embeddings.toJSON();
+        JSONArray result = embeddings123456.toJSON();
         assertEquals(expectedJson.toString(), result.toString());
     }
 
     @Test
     public void testGetBytes() {
-        byte[] bytes = embeddings.getBytes();
+        byte[] bytes = embeddings123456.getBytes();
         assertEquals(6 * 4, bytes.length);
         ByteBuffer buffer = ByteBuffer.wrap(bytes);
 
-        for (Float value : Arrays.asList(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f)) {
+        for (Float value : testData123456) {
             assertEquals(value, buffer.getFloat(), 0.0001);
         }
 
-        assertEquals(embeddings, new Embeddings(bytes));
+        assertEquals(embeddings123456, new Embeddings(bytes));
     }
 
     @Test
     public void testEquals() {
-        Embeddings sameEmbeddings = new Embeddings(testData);
-        assertEquals(embeddings, sameEmbeddings);
+        Embeddings sameEmbeddings = new Embeddings(testData123456);
+        assertEquals(embeddings123456, sameEmbeddings);
 
         List<Float> differentData = List.of(7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f);
         Embeddings differentEmbeddings = new Embeddings(differentData);
-        assertNotEquals(embeddings, differentEmbeddings);
+        assertNotEquals(embeddings123456, differentEmbeddings);
     }
 
     @Test
     public void testHashCode() {
-        Embeddings sameEmbeddings = new Embeddings(testData);
-        assertEquals(embeddings.hashCode(), sameEmbeddings.hashCode());
+        assertEquals(testData123456.hashCode(), embeddings123456.hashCode());
     }
 
     @Test
     public void testCompareTo() {
-        Embeddings otherEmbeddings = new Embeddings(List.of(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f));
+        Embeddings otherEmbeddings = new Embeddings(testData123456);
 
-        assertEquals(1.0, embeddings.compareTo(otherEmbeddings), 0.0001);
+        assertEquals(1.0, embeddings123456.compareTo(otherEmbeddings), 0.0001);
 
         Embeddings differentEmbeddings = new Embeddings(List.of(7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f));
 
         double expectedSimilarity = (7 + 2 * 8 + 3 * 9 + 4 * 10 + 5 * 11 + 6 * 12) /
                 Math.sqrt((1 + 2 * 2 + 3 * 3 + 4 * 4 + 5 * 5 + 6 * 6) * (7 * 7 + 8 * 8 + 9 * 9 + 10 * 10 + 11 * 11 + 12 * 12));
 
-        assertEquals(expectedSimilarity, embeddings.compareTo(differentEmbeddings), 0.0001);
+        assertEquals(expectedSimilarity, embeddings123456.compareTo(differentEmbeddings), 0.0001);
     }
 
     @Test
     public void testCompareToDifferentDimensions() {
         Embeddings differentDimensionEmbeddings = new Embeddings(List.of(7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13f));
-        assertThrows(IllegalArgumentException.class, () -> embeddings.compareTo(differentDimensionEmbeddings));
+        assertThrows(IllegalArgumentException.class, () -> embeddings123456.compareTo(differentDimensionEmbeddings));
     }
 
     @Test
     public void testCompareToEmpty() {
         Embeddings emptyEmbeddings = new Embeddings(List.of());
-        assertThrows(IllegalArgumentException.class, () -> embeddings.compareTo(emptyEmbeddings));
+        assertThrows(IllegalArgumentException.class, () -> embeddings123456.compareTo(emptyEmbeddings));
     }
 
     @Test
     public void testCompareToZeroNorm() {
         Embeddings zeroNormEmbeddings = new Embeddings(List.of(0f, 0f, 0f, 0f, 0f, 0f));
-        assertThrows(IllegalArgumentException.class, () -> embeddings.compareTo(zeroNormEmbeddings));
+        assertThrows(IllegalArgumentException.class, () -> embeddings123456.compareTo(zeroNormEmbeddings));
     }
 
     @DatabaseTest
@@ -144,11 +147,11 @@ public class TestEmbeddings {
 
         Random random = new Random(3248975927598L);
         int count = 1000;
-        int length = 768;
+        int length = 384;
 
-        this.embeddings = newRandomEmbeddings(length, random);
+        this.embeddings123456 = newRandomEmbeddings(length, random);
 
-        connectionManager.execute("INSERT INTO embeddings (v768,v32) VALUES (?,?)", 3000L, embeddings.getBytes(), embeddings.applyPCA(32).getBytes());
+        connectionManager.execute("INSERT INTO embeddings (v768,v32) VALUES (?,?)", 3000L, embeddings123456.getBytes(), embeddings123456.applyPCA(32).getBytes());
 
         Map<Embeddings, Embeddings> testEmbeddings = loadPCAEmbeddings();
         Iterator<Map.Entry<Embeddings, Embeddings>> it = testEmbeddings.entrySet().iterator();
@@ -180,7 +183,7 @@ public class TestEmbeddings {
             double bestSimilarity = Double.MIN_VALUE;
             while (rs.next()) {
                 Embeddings result = new Embeddings(connectionManager.getBlob(rs, 2));
-                double similarity = result.compareTo(embeddings);
+                double similarity = result.compareTo(embeddings123456);
                 if (similarity > bestSimilarity) {
                     best = result;
                     bestSimilarity = similarity;
@@ -188,7 +191,7 @@ public class TestEmbeddings {
             }
             return best;
         }, 3000L);
-        assertEquals(embeddings, highest);
+        assertEquals(embeddings123456, highest);
         System.out.println(timer);
 //        System.out.println(profiler.toString(0.01));
 
@@ -203,7 +206,7 @@ public class TestEmbeddings {
                 Embeddings result = new Embeddings(connectionManager.getBlob(rs, 2));
             }
         }, 3000L);
-        assertEquals(embeddings, highest);
+        assertEquals(embeddings123456, highest);
         System.out.println(timer);
     }
 
@@ -276,7 +279,7 @@ public class TestEmbeddings {
                     Thread thread = new Thread(() -> {
                         Map<Embeddings, Embeddings> embeddingsMap = new HashMap<>();
                         for (int i = 0; i < count / threadCount; i++) {
-                            Embeddings embedding768 = newRandomEmbeddings(384, random);
+                            Embeddings embedding768 = newRandomEmbeddings(768, random);
                             Embeddings embedding32 = embedding768.applyPCA(32);
 
                             embeddingsMap.put(embedding768, embedding32);
@@ -339,5 +342,27 @@ public class TestEmbeddings {
             embeddings.add(embedding * random.nextFloat(0.999f, 1.001f));
         }
         return new Embeddings(embeddings);
+    }
+
+    @RepeatedTest(value=100)
+    public void testProject() {
+        int toSize = 30;
+        Embeddings reducedEmbeddings1 = embeddingsRandom100.projectTo(toSize);
+        Embeddings reducedEmbeddings2 = modifySlightly(embeddingsRandom100.applyPCA(toSize), new Random(89725783228892L)).projectTo(toSize);
+
+        // Check the size of the reduced embeddings
+        assertEquals(toSize, reducedEmbeddings1.getEmbeddings().size());
+        assertEquals(toSize, reducedEmbeddings2.getEmbeddings().size());
+
+        // Compute reconstruction error
+        double similarity = reducedEmbeddings1.compareTo(reducedEmbeddings2);
+        assertTrue(similarity > 0.8, "Similarity should be high, is " + similarity);
+    }
+
+
+    @Test
+    public void testInvalidPCA() {
+        assertThrows(IllegalArgumentException.class, () -> embeddings123456.applyPCA(0));
+        assertThrows(IllegalArgumentException.class, () -> embeddings123456.applyPCA(embeddings123456.getEmbeddings().size()));
     }
 }
