@@ -4,6 +4,7 @@ import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ThrowingRunnable;
 import dev.kshl.kshlib.function.ThrowingSupplier;
+import dev.kshl.kshlib.net.llm.Embeddings;
 
 import java.io.Closeable;
 import java.io.File;
@@ -505,6 +506,9 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     protected void prepare(Connection connection, PreparedStatement preparedStatement, int index, Object o) throws SQLException {
+        if (o instanceof Embeddings embeddings) {
+            o = embeddings.toString();
+        }
         if (o == null) {
             preparedStatement.setNull(index, Types.NULL);
         } else if (o instanceof String c) {

@@ -58,15 +58,18 @@ public class OllamaAPI extends NetUtilInterval {
     public static void main(String[] args) throws IOException {
         Map<Embeddings, String> documents = new HashMap<>();
         ThrowingConsumer<String, IOException> consumeDocument = doc -> {
-            documents.put(embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings(), doc);
+            Embeddings embeddings = embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings();
+
+            System.out.println(doc + "\n" + embeddings.getEmbeddings().size() + embeddings.toJSON());
+            documents.put(embeddings, doc);
         };
 
         consumeDocument.accept("My favorite color is purple. That's my favorite color because I like it.");
         consumeDocument.accept("My favorite animal is a giraffe. I like this animal because it has a long neck.");
 
         ThrowingConsumer<String, IOException> consumeQuery = query -> {
-            System.out.println("SEARCHING: " + query);
             Embeddings embeddings = embed(query, NomicEmbedRequest.Function.SEARCH_QUERY).embeddings();
+            System.out.println("SEARCHING: " + query + "\n" + embeddings.getEmbeddings().size() + embeddings.toJSON());
             for (Map.Entry<Embeddings, String> entry : documents.entrySet()) {
                 System.out.println(entry.getKey().compareTo(embeddings) + ": " + entry.getValue());
             }

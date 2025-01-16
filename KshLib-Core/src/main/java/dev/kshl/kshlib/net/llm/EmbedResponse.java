@@ -1,12 +1,8 @@
 package dev.kshl.kshlib.net.llm;
 
-import dev.kshl.kshlib.json.JSONUtil;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.List;
 
 /**
  * @param model             The model used to generate the response
@@ -31,7 +27,7 @@ public record EmbedResponse(
 
         Duration total_duration = Duration.ofNanos(jsonObject.getLong("total_duration"));
 
-        Embeddings embeddings = Embeddings.fromJSON(jsonObject.getJSONArray("embeddings"));
+        Embeddings embeddings = new Embeddings(jsonObject.getJSONArray("embeddings"));
 
         return new EmbedResponse(model, load_duration, prompt_eval_count, total_duration, embeddings);
     }

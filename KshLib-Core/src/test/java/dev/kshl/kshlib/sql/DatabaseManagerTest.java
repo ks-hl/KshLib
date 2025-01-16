@@ -53,7 +53,10 @@ public class DatabaseManagerTest {
     private static Stream<ConnectionManager> provideConnectionManagers() throws IOException, SQLException, ClassNotFoundException {
         List<ConnectionManager> connectionManagerList = new ArrayList<>();
 
-        connectionManagerList.add(new TestConnectionManager(new File("test.db")));  // SQLite)
+        File sqliteFile = new File("/tmp/kshlib/test.db");
+        //noinspection ResultOfMethodCallIgnored
+        sqliteFile.delete();
+        connectionManagerList.add(new TestConnectionManager(sqliteFile));  // SQLite)
         try {
             connectionManagerList.add(new TestConnectionManager("localhost:3306", "test", "test", "password", 8));  // MySQL)
         } catch (SQLException e) {
