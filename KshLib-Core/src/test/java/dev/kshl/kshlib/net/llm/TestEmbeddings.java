@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
@@ -218,23 +219,41 @@ public class TestEmbeddings {
             }
         } else {
             Random random = new Random(982654989);
-            final StringBuilder outString = new StringBuilder();
             int count = 10000;
             int threadCount = 10;
             List<Thread> threads = new ArrayList<>();
             for (int threadN_ = 0; threadN_ < threadCount; threadN_++) {
                 final int threadN = threadN_;
                 Thread thread = new Thread(() -> {
+                    StringBuilder outString = new StringBuilder();
                     for (int i = 0; i < count / threadCount; i++) {
                         Embeddings embedding768 = newRandomEmbeddings(384, random);
                         Embeddings embedding32 = embedding768.applyPCA(32);
-                        synchronized (outString) {
+                        synchronized (file) {
                             outString.append(embedding768.toBase64()).append(";");
                             outString.append(embedding32.toBase64()).append("\n");
+
+                            if (outString.length() > 8_000_000) {
+                                try (FileWriter fileWriter = new FileWriter(file, true)) {
+                                    fileWriter.write(outString.toString().replace(" ", ""));
+                                    fileWriter.flush();
+                                    outString = new StringBuilder();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
                         }
 
-                        if (threadN == 0) {
+                        if (threadN == 0 && i % 100 == 0) {
                             System.out.println("Generating test embeddings: " + Formatter.toString(i * 100 * threadCount / (double) count, 2, true, true) + "%");
+                        }
+                    }
+                    if (!outString.isEmpty()) {
+                        try (FileWriter fileWriter = new FileWriter(file, true)) {
+                            fileWriter.write(outString.toString().replace(" ", ""));
+                            fileWriter.flush();
+                        } catch (IOException e) {
+                            e.printStackTrace();
                         }
                     }
                 });
@@ -247,11 +266,6 @@ public class TestEmbeddings {
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
                 }
-            }
-            try {
-                FileUtil.write(file, outString.toString().replace(" ", ""));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
             }
         }
 
