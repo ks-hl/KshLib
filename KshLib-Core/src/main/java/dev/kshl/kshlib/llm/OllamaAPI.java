@@ -61,7 +61,7 @@ public class OllamaAPI extends NetUtilInterval {
         ThrowingConsumer<String, IOException> consumeDocument = doc -> {
             AbstractEmbeddings embeddings = embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings();
 
-            System.out.println(doc + "\n" + embeddings.getEmbeddings().size() + embeddings.toJSON());
+            System.out.println(doc + "\n" + embeddings.size() + embeddings.toJSON());
             documents.put(embeddings, doc);
         };
 
@@ -70,9 +70,9 @@ public class OllamaAPI extends NetUtilInterval {
 
         ThrowingConsumer<String, IOException> consumeQuery = query -> {
             AbstractEmbeddings embeddings = embed(query, NomicEmbedRequest.Function.SEARCH_QUERY).embeddings();
-            System.out.println("SEARCHING: " + query + "\n" + embeddings.getEmbeddings().size() + embeddings.toJSON());
+            System.out.println("SEARCHING: " + query + "\n" + embeddings.size() + embeddings.toJSON());
             for (Map.Entry<AbstractEmbeddings, String> entry : documents.entrySet()) {
-                System.out.println(entry.getKey().compareEuclidean(embeddings) + ": " + entry.getValue());
+                System.out.println(entry.getKey().compareCosine(embeddings) + ": " + entry.getValue());
             }
         };
         consumeQuery.accept("What's your favorite color?");

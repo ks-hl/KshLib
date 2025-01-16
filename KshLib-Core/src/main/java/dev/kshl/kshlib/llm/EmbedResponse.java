@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.llm;
 
 import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
+import dev.kshl.kshlib.llm.embed.Embeddings;
 import org.json.JSONObject;
 
 import java.time.Duration;
@@ -28,7 +29,7 @@ public record EmbedResponse(
 
         Duration total_duration = Duration.ofNanos(jsonObject.getLong("total_duration"));
 
-        AbstractEmbeddings embeddings = new AbstractEmbeddings(jsonObject.getJSONArray("embeddings"));
+        AbstractEmbeddings embeddings = Embeddings.fromJSON(jsonObject.getJSONArray("embeddings"));
 
         return new EmbedResponse(model, load_duration, prompt_eval_count, total_duration, embeddings);
     }
