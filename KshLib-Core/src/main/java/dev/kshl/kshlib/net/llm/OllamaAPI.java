@@ -56,9 +56,9 @@ public class OllamaAPI extends NetUtilInterval {
     }
 
     public static void main(String[] args) throws IOException {
-        Map<Embeddings, String> documents = new HashMap<>();
+        Map<AbstractEmbeddings, String> documents = new HashMap<>();
         ThrowingConsumer<String, IOException> consumeDocument = doc -> {
-            Embeddings embeddings = embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings();
+            AbstractEmbeddings embeddings = embed(doc, NomicEmbedRequest.Function.SEARCH_DOCUMENT).embeddings();
 
             System.out.println(doc + "\n" + embeddings.getEmbeddings().size() + embeddings.toJSON());
             documents.put(embeddings, doc);
@@ -68,10 +68,10 @@ public class OllamaAPI extends NetUtilInterval {
         consumeDocument.accept("My favorite animal is a giraffe. I like this animal because it has a long neck.");
 
         ThrowingConsumer<String, IOException> consumeQuery = query -> {
-            Embeddings embeddings = embed(query, NomicEmbedRequest.Function.SEARCH_QUERY).embeddings();
+            AbstractEmbeddings embeddings = embed(query, NomicEmbedRequest.Function.SEARCH_QUERY).embeddings();
             System.out.println("SEARCHING: " + query + "\n" + embeddings.getEmbeddings().size() + embeddings.toJSON());
-            for (Map.Entry<Embeddings, String> entry : documents.entrySet()) {
-                System.out.println(entry.getKey().compareTo(embeddings) + ": " + entry.getValue());
+            for (Map.Entry<AbstractEmbeddings, String> entry : documents.entrySet()) {
+                System.out.println(entry.getKey().compareEuclidean(embeddings) + ": " + entry.getValue());
             }
         };
         consumeQuery.accept("What's your favorite color?");

@@ -16,7 +16,7 @@ public record EmbedResponse(
         Duration load_duration,
         int prompt_eval_count,
         Duration total_duration,
-        Embeddings embeddings
+        AbstractEmbeddings embeddings
 ) {
     static EmbedResponse fromJSON(JSONObject jsonObject) {
         String model = jsonObject.getString("model");
@@ -27,7 +27,7 @@ public record EmbedResponse(
 
         Duration total_duration = Duration.ofNanos(jsonObject.getLong("total_duration"));
 
-        Embeddings embeddings = new Embeddings(jsonObject.getJSONArray("embeddings"));
+        AbstractEmbeddings embeddings = new AbstractEmbeddings(jsonObject.getJSONArray("embeddings"));
 
         return new EmbedResponse(model, load_duration, prompt_eval_count, total_duration, embeddings);
     }
