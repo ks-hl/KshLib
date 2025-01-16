@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.net.llm;
+package dev.kshl.kshlib.llm;
 
 import dev.kshl.kshlib.net.HTTPRequestType;
 import dev.kshl.kshlib.net.NetUtil;

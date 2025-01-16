@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.net.llm;
+package dev.kshl.kshlib.llm;
 
 import org.json.JSONObject;
 

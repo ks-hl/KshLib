@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.net.llm;
+package dev.kshl.kshlib.llm;
 
 import dev.kshl.kshlib.json.JSONCollector;
 import org.json.JSONArray;
@@ -10,7 +10,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 
-public class AbstractEmbeddings {
+public abstract class AbstractEmbeddings {
     private final List<Float> embeddings;
 
     public AbstractEmbeddings(List<Float> embeddings) {
@@ -72,7 +72,7 @@ public class AbstractEmbeddings {
     }
 
     public JSONArray toJSON() {
-        return this.embeddings.stream().collect(new JSONCollector());
+        return this.getEmbeddings().stream().collect(new JSONCollector());
     }
 
     public byte[] getBytes() {
@@ -93,13 +93,13 @@ public class AbstractEmbeddings {
 
     @Override
     public int hashCode() {
-        return embeddings.hashCode();
+        return getEmbeddings().hashCode();
     }
 
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof AbstractEmbeddings otherEmbeddings)) return false;
-        return this.embeddings.equals(otherEmbeddings.embeddings);
+        return this.getEmbeddings().equals(otherEmbeddings.getEmbeddings());
     }
 
     @Override
@@ -107,9 +107,7 @@ public class AbstractEmbeddings {
         return toJSON().toString();
     }
 
-    public List<Float> getEmbeddings() {
-        return this.embeddings;
-    }
+    public abstract List<Float> getEmbeddings();
 
     /**
      * Calculates the cosine similarity between two embeddings.
@@ -119,10 +117,10 @@ public class AbstractEmbeddings {
      * @throws IllegalArgumentException if the embeddings have different dimensions or are empty.
      */
     public double compareCosine(AbstractEmbeddings other) {
-        if (this.embeddings.size() != other.embeddings.size()) {
-            throw new IllegalArgumentException("Embeddings must have the same number of elements. " + this.embeddings.size() + "!=" + other.embeddings.size());
+        if (this.getEmbeddings().size() != other.getEmbeddings().size()) {
+            throw new IllegalArgumentException("Embeddings must have the same number of elements. " + this.getEmbeddings().size() + "!=" + other.getEmbeddings().size());
         }
-        if (this.embeddings.isEmpty()) {
+        if (this.getEmbeddings().isEmpty()) {
             throw new IllegalArgumentException("Embeddings cannot be empty");
         }
 
@@ -130,9 +128,9 @@ public class AbstractEmbeddings {
         double normA = 0.0;
         double normB = 0.0;
 
-        for (int i = 0; i < this.embeddings.size(); i++) {
-            double a = this.embeddings.get(i);
-            double b = other.embeddings.get(i);
+        for (int i = 0; i < this.getEmbeddings().size(); i++) {
+            double a = this.getEmbeddings().get(i);
+            double b = other.getEmbeddings().get(i);
 
             dotProduct += a * b;
             normA += a * a;
@@ -154,18 +152,18 @@ public class AbstractEmbeddings {
      * @throws IllegalArgumentException if the embeddings have different dimensions or are empty.
      */
     public double compareEuclidean(AbstractEmbeddings other) {
-        if (this.embeddings.size() != other.embeddings.size()) {
-            throw new IllegalArgumentException("Embeddings must have the same number of elements. " + this.embeddings.size() + "!=" + other.embeddings.size());
+        if (this.getEmbeddings().size() != other.getEmbeddings().size()) {
+            throw new IllegalArgumentException("Embeddings must have the same number of elements. " + this.getEmbeddings().size() + "!=" + other.getEmbeddings().size());
         }
-        if (this.embeddings.isEmpty()) {
+        if (this.getEmbeddings().isEmpty()) {
             throw new IllegalArgumentException("Embeddings cannot be empty");
         }
 
         double sum = 0.0;
 
-        for (int i = 0; i < this.embeddings.size(); i++) {
-            double a = this.embeddings.get(i);
-            double b = other.embeddings.get(i);
+        for (int i = 0; i < this.getEmbeddings().size(); i++) {
+            double a = this.getEmbeddings().get(i);
+            double b = other.getEmbeddings().get(i);
 
             sum += (a - b) * (a - b);
         }

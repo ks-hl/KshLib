@@ -4,7 +4,7 @@ import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ThrowingRunnable;
 import dev.kshl.kshlib.function.ThrowingSupplier;
-import dev.kshl.kshlib.net.llm.AbstractEmbeddings;
+import dev.kshl.kshlib.llm.AbstractEmbeddings;
 
 import java.io.Closeable;
 import java.io.File;
