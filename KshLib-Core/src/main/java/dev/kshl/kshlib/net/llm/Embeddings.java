@@ -6,6 +6,7 @@ import org.json.JSONArray;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 
@@ -68,6 +69,14 @@ public class Embeddings {
             buffer.putFloat(embedding);
         }
         return buffer.array();
+    }
+
+    public String toBase64() {
+        return Base64.getEncoder().encodeToString(getBytes());
+    }
+
+    public static Embeddings fromBase64(String base64) {
+        return new Embeddings(Base64.getDecoder().decode(base64));
     }
 
     @Override
@@ -148,26 +157,22 @@ public class Embeddings {
             throw new IllegalArgumentException("Number of components must be between 1 and " + (embeddings.size() - 1));
         }
 
-        int n = 1; // Number of samples, assuming one sample here
         int d = embeddings.size(); // Original dimensionality
 
         // Step 1: Center the data
-        List<Float> centeredData = new ArrayList<>(embeddings);
+        float[] centeredData = new float[d];
         double mean = embeddings.stream().mapToDouble(Float::doubleValue).average().orElse(0.0);
         for (int i = 0; i < d; i++) {
-            centeredData.set(i, centeredData.get(i) - (float) mean);
+            centeredData[i] = embeddings.get(i) - (float) mean;
         }
 
         // Step 2: Compute the covariance matrix
         double[][] covarianceMatrix = new double[d][d];
         for (int i = 0; i < d; i++) {
             for (int j = 0; j <= i; j++) {
-                double cov = 0.0;
-                for (int k = 0; k < n; k++) {
-                    cov += centeredData.get(i) * centeredData.get(j);
-                }
-                covarianceMatrix[i][j] = cov / n;
-                covarianceMatrix[j][i] = cov / n;
+                double cov = centeredData[i] * centeredData[j];
+                covarianceMatrix[i][j] = cov;
+                covarianceMatrix[j][i] = cov;
             }
         }
 
@@ -195,7 +200,7 @@ public class Embeddings {
         double[] transformedData = new double[numComponents];
         for (int i = 0; i < numComponents; i++) {
             for (int j = 0; j < d; j++) {
-                transformedData[i] += centeredData.get(j) * selectedEigenVectors[j][i];
+                transformedData[i] += centeredData[j] * selectedEigenVectors[j][i];
             }
         }
 
@@ -330,4 +335,5 @@ public class Embeddings {
             v[k][l] = h + s * (g - h * tau);
         }
     }
+
 }

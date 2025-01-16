@@ -2,6 +2,8 @@ package dev.kshl.kshlib.net.llm;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.misc.BasicProfiler;
+import dev.kshl.kshlib.misc.FileUtil;
+import dev.kshl.kshlib.misc.Formatter;
 import dev.kshl.kshlib.misc.Timer;
 import dev.kshl.kshlib.sql.ConnectionManager;
 import dev.kshl.kshlib.sql.DatabaseTest;
@@ -9,13 +11,18 @@ import org.json.JSONArray;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -129,23 +136,29 @@ public class TestEmbeddings {
         connectionManager.execute("""
                 CREATE TABLE embeddings (
                     id INTEGER PRIMARY KEY,
-                    v BLOB NOT NULL
+                    v768 BLOB NOT NULL,
+                    v32 BLOB NOT NULL
                 )""", 3000L);
 
         Random random = new Random(3248975927598L);
-        int count = 10000;
+        int count = 1000;
         int length = 768;
 
         this.embeddings = newRandomEmbeddings(length, random);
 
-        connectionManager.execute("INSERT INTO embeddings (v) VALUES (?)", 3000L, (Object) embeddings.getBytes());
+        connectionManager.execute("INSERT INTO embeddings (v768,v32) VALUES (?,?)", 3000L, embeddings.getBytes(), embeddings.applyPCA(32).getBytes());
 
+        Map<Embeddings, Embeddings> testEmbeddings = loadPCAEmbeddings();
+        Iterator<Map.Entry<Embeddings, Embeddings>> it = testEmbeddings.entrySet().iterator();
 
-        for (int i1 = 0; i1 < 10; i1++) {
+        while (it.hasNext()) {
             connectionManager.execute(connection -> {
-                try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO embeddings (v) VALUES " + ("(?),".repeat(count - 1)) + "(?)")) {
-                    for (int i = 0; i < count; i++) {
-                        connectionManager.setBlob(connection, preparedStatement, i + 1, newRandomEmbeddings(length, random).getBytes());
+                try (PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO embeddings (v768,v32) VALUES " + ("(?,?),".repeat((count / 10) - 1)) + "(?,?)")) {
+                    for (int i1 = 0; i1 < count / 10 && it.hasNext(); i1++) {
+                        Map.Entry<Embeddings, Embeddings> embed = it.next();
+                        int index = i1 * 2 + 1;
+                        connectionManager.setBlob(connection, preparedStatement, index, embed.getKey().getBytes());
+                        connectionManager.setBlob(connection, preparedStatement, index + 1, embed.getValue().getBytes());
                     }
                     preparedStatement.execute();
                 }
@@ -158,7 +171,7 @@ public class TestEmbeddings {
         profiler.start();
 
         Embeddings highest = connectionManager.query("""
-                 SELECT id,v
+                 SELECT id,v768
                  FROM embeddings
                 """, rs -> {
             Embeddings best = null;
@@ -181,7 +194,7 @@ public class TestEmbeddings {
         timer = new Timer();
 
         connectionManager.query("""
-                 SELECT id,v
+                 SELECT id,v32
                  FROM embeddings
                 """, rs -> {
             while (rs.next()) {
@@ -190,6 +203,59 @@ public class TestEmbeddings {
         }, 3000L);
         assertEquals(embeddings, highest);
         System.out.println(timer);
+    }
+
+    private static Map<Embeddings, Embeddings> loadPCAEmbeddings() {
+        File file = new File("src/test/resources/embeddings.csv");
+        Map<Embeddings, Embeddings> out = new HashMap<>();
+        if (file.exists()) {
+            String[] parts = FileUtil.read(file).split("[\n\r;]+");
+            for (int i = 0; i < parts.length; i += 2) {
+                String embedding768 = parts[i];
+                String embedding32 = parts[i + 1];
+
+                out.put(Embeddings.fromBase64(embedding768), Embeddings.fromBase64(embedding32));
+            }
+        } else {
+            Random random = new Random(982654989);
+            final StringBuilder outString = new StringBuilder();
+            int count = 10000;
+            int threadCount = 10;
+            List<Thread> threads = new ArrayList<>();
+            for (int threadN_ = 0; threadN_ < threadCount; threadN_++) {
+                final int threadN = threadN_;
+                Thread thread = new Thread(() -> {
+                    for (int i = 0; i < count / threadCount; i++) {
+                        Embeddings embedding768 = newRandomEmbeddings(384, random);
+                        Embeddings embedding32 = embedding768.applyPCA(32);
+                        synchronized (outString) {
+                            outString.append(embedding768.toBase64()).append(";");
+                            outString.append(embedding32.toBase64()).append("\n");
+                        }
+
+                        if (threadN == 0) {
+                            System.out.println("Generating test embeddings: " + Formatter.toString(i * 100 * threadCount / (double) count, 2, true, true) + "%");
+                        }
+                    }
+                });
+                threads.add(thread);
+                thread.start();
+            }
+            for (Thread thread : threads) {
+                try {
+                    thread.join();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            try {
+                FileUtil.write(file, outString.toString().replace(" ", ""));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        return out;
     }
 
     private static Embeddings newRandomEmbeddings(int length, Random random) {
