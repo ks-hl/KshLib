@@ -4,7 +4,6 @@ import org.json.JSONArray;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 
 public class Embeddings {
@@ -23,19 +22,6 @@ public class Embeddings {
             combined.addAll(embedding);
         }
         return new FloatEmbeddings(combined);
-    }
-
-    public static AbstractEmbeddings fromBytes(byte[] bytes) {
-        List<Float> embeds = new ArrayList<>();
-        for (int i = 0; i < bytes.length; i += 4) {
-            int floatInt =
-                    ((bytes[i] & 0xFF) << 24) |
-                            ((bytes[i + 1] & 0xFF) << 16) |
-                            ((bytes[i + 2] & 0xFF) << 8) |
-                            (bytes[i + 3] & 0xFF);
-            embeds.add(Float.intBitsToFloat(floatInt));
-        }
-        return new FloatEmbeddings(embeds);
     }
 
     public static AbstractEmbeddings fromJSON(JSONArray array) {
@@ -57,9 +43,5 @@ public class Embeddings {
             else if (o instanceof String s) embeddings.add(Float.parseFloat(s));
             else throw new IllegalArgumentException("Unexpected data type: " + o.getClass().getName());
         }
-    }
-
-    public static AbstractEmbeddings fromBase64(String base64) {
-        return fromBytes(Base64.getDecoder().decode(base64));
     }
 }

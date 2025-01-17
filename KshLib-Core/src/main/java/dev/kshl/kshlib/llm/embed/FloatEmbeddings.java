@@ -2,6 +2,8 @@ package dev.kshl.kshlib.llm.embed;
 
 import javax.annotation.Nonnull;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
 
@@ -51,4 +53,20 @@ public class FloatEmbeddings extends AbstractEmbeddings {
         return new FloatIterator(this.embeddings);
     }
 
+    public static FloatEmbeddings fromBytes(byte[] bytes) {
+        List<Float> embeds = new ArrayList<>();
+        for (int i = 0; i < bytes.length; i += 4) {
+            int floatInt =
+                    ((bytes[i] & 0xFF) << 24) |
+                            ((bytes[i + 1] & 0xFF) << 16) |
+                            ((bytes[i + 2] & 0xFF) << 8) |
+                            (bytes[i + 3] & 0xFF);
+            embeds.add(Float.intBitsToFloat(floatInt));
+        }
+        return new FloatEmbeddings(embeds);
+    }
+
+    public static FloatEmbeddings fromBase64(String base64) {
+        return fromBytes(Base64.getDecoder().decode(base64));
+    }
 }

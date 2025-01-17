@@ -16,6 +16,11 @@ public class ByteEmbeddings extends AbstractEmbeddings {
         }
     }
 
+    public ByteEmbeddings(byte[] bytes) {
+        this.embeddings = new byte[bytes.length];
+        System.arraycopy(bytes, 0, this.embeddings, 0, this.embeddings.length);
+    }
+
     @Override
     protected AbstractEmbeddings construct(List<Float> embeddings) {
         return new ByteEmbeddings(embeddings);
@@ -63,5 +68,9 @@ public class ByteEmbeddings extends AbstractEmbeddings {
         public Float next() {
             return toFloat(embeddings[index++]);
         }
+    }
+
+    public static ByteEmbeddings fromBytes(byte[] bytes) {
+        return new ByteEmbeddings(bytes);
     }
 }

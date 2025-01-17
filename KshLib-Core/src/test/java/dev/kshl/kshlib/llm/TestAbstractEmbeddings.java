@@ -9,10 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -67,7 +65,7 @@ public class TestAbstractEmbeddings {
             assertEquals(value, buffer.getFloat(), 0.0001);
         }
 
-        assertEquals(embeddings123456, Embeddings.fromBytes(bytes));
+        assertEquals(embeddings123456, FloatEmbeddings.fromBytes(bytes));
     }
 
     @Test
@@ -115,13 +113,5 @@ public class TestAbstractEmbeddings {
     public void testCompareCosineZeroNorm() {
         AbstractEmbeddings zeroNormEmbeddings = new FloatEmbeddings(List.of(0f, 0f, 0f, 0f, 0f, 0f));
         assertThrows(IllegalArgumentException.class, () -> embeddings123456.compareCosine(zeroNormEmbeddings));
-    }
-
-    private static AbstractEmbeddings newRandomEmbeddings(int length, Random random) {
-        List<Float> embeddings = new ArrayList<>();
-        for (int i = 0; i < length; i++) {
-            embeddings.add(random.nextFloat() * 2 - 1);
-        }
-        return new FloatEmbeddings(embeddings);
     }
 }

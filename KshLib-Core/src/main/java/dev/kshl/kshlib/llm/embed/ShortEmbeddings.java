@@ -2,7 +2,7 @@ package dev.kshl.kshlib.llm.embed;
 
 import javax.annotation.Nonnull;
 import java.nio.ByteBuffer;
-import java.util.AbstractList;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
@@ -68,5 +68,13 @@ public class ShortEmbeddings extends AbstractEmbeddings {
         public Float next() {
             return toFloat(embeddings[index++]);
         }
+    }
+
+    public static ShortEmbeddings fromBytes(byte[] bytes) {
+        List<Float> embeds = new ArrayList<>();
+        for (int i = 0; i < bytes.length; i += 4) {
+            embeds.add(toFloat((short) (((bytes[i + 2] & 0xFF) << 8) | (bytes[i + 3] & 0xFF))));
+        }
+        return new ShortEmbeddings(embeds);
     }
 }
