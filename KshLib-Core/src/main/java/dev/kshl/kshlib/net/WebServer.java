@@ -159,7 +159,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
                                 if (annotation instanceof Endpoint endpoint1) {
                                     endpointAnnotation = endpoint1;
                                     break;
-                                }
+                                } finish adding endpoint
                             }
                             if (endpointAnnotation == null) continue;
                             String endpointValue = endpointAnnotation.value();
