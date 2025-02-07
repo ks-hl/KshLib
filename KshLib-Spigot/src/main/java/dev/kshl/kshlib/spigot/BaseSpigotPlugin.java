@@ -34,11 +34,16 @@ public class BaseSpigotPlugin extends JavaPlugin {
         try {
             this.debug.save();
         } catch (IOException e) {
-            print(e, "Failed to save debug state");
+            print("Failed to save debug state", e);
         }
     }
 
+    @Deprecated
     public void print(Throwable t, String message) {
+        print(message, t);
+    }
+
+    public void print(String message, Throwable t) {
         getLogger().log(Level.WARNING, t.getMessage() + ", " + message, t);
     }
 

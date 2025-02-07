@@ -1,6 +1,5 @@
 package dev.kshl.kshlib.yaml;
 
-import javax.annotation.Nullable;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -9,6 +8,7 @@ import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 import org.yaml.snakeyaml.resolver.Resolver;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -26,14 +26,18 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 public class YamlConfig {
+
     @Nullable
     private final YamlConfig parent;
+    @Nullable
+    private final String key;
     @Nullable
     private final File file;
     private final Supplier<InputStream> inputStreamSupplier;
@@ -42,17 +46,18 @@ public class YamlConfig {
 
     private YamlConfig() {
         this.parent = null;
+        this.key = null;
         this.file = null;
         this.inputStreamSupplier = null;
         data = new DataMap();
     }
 
     public YamlConfig(@Nullable File file, @Nullable Supplier<InputStream> inputStreamSupplier) {
-        this(null, file, inputStreamSupplier);
+        this(null, null, file, inputStreamSupplier);
     }
 
-    private YamlConfig(YamlConfig parent) {
-        this(parent, null, null);
+    private YamlConfig(YamlConfig parent, String key) {
+        this(parent, key, null, null);
         initializeDataMap();
     }
 
@@ -60,11 +65,12 @@ public class YamlConfig {
         return new YamlConfig();
     }
 
-    private YamlConfig(@Nullable YamlConfig parent, @Nullable File file, @Nullable Supplier<InputStream> inputStreamSupplier) {
+    private YamlConfig(@Nullable YamlConfig parent, @Nullable String key, @Nullable File file, @Nullable Supplier<InputStream> inputStreamSupplier) {
         if (parent == null && file == null && inputStreamSupplier == null) {
             throw new NullPointerException("file and inputStreamSupplier cannot both be null.");
         }
         this.parent = parent;
+        this.key = key;
         this.file = file;
         this.inputStreamSupplier = inputStreamSupplier;
     }
@@ -80,7 +86,8 @@ public class YamlConfig {
         }
         if (!file.exists()) {
             if (inputStreamSupplier != null) {
-                file.toPath().getParent().toFile().mkdirs();
+                //noinspection ResultOfMethodCallIgnored
+                file.toPath().toAbsolutePath().getParent().toFile().mkdirs();
                 Files.copy(inputStreamSupplier.get(), file.toPath());
             } else {
                 throw new FileNotFoundException();
@@ -121,17 +128,20 @@ public class YamlConfig {
         }
     }
 
-    private Optional<Object> flatGet(String key) {
-        if (data == null) return Optional.empty();
-        return Optional.ofNullable(data.get(key));
+    public Optional<Object> get(String key) {
+        return getResult(key).value();
     }
 
-    public Optional<Object> get(String key) {
-        return get(key, o -> true, o -> o);
+    public YamlResult<Object> getResult(String key) {
+        return get(key, o -> true, o -> o, "Object");
     }
 
     public Optional<String> getString(String key) {
-        return get(key, s -> s instanceof String, o -> (String) o);
+        return getStringResult(key).value();
+    }
+
+    public YamlResult<String> getStringResult(String key) {
+        return get(key, s -> s instanceof String, o -> (String) o, "String");
     }
 
     public String getStringOrSet(String key, String def) {
@@ -139,7 +149,11 @@ public class YamlConfig {
     }
 
     public Optional<Integer> getInt(String key) {
-        return get(key, s -> s instanceof Integer, o -> (Integer) o);
+        return getIntResult(key).value();
+    }
+
+    public YamlResult<Integer> getIntResult(String key) {
+        return get(key, s -> s instanceof Integer, o -> (Integer) o, "Integer");
     }
 
     public Integer getIntOrSet(String key, Integer def) {
@@ -147,13 +161,17 @@ public class YamlConfig {
     }
 
     public Optional<Long> getLong(String key) {
+        return getLongResult(key).value();
+    }
+
+    public YamlResult<Long> getLongResult(String key) {
         return get(key, s -> s instanceof Long || s instanceof Integer, o -> {
             if (o instanceof Integer i) {
                 return i.longValue();
             } else {
                 return (Long) o;
             }
-        });
+        }, "Long");
     }
 
     public Long getLongOrSet(String key, Long def) {
@@ -167,7 +185,15 @@ public class YamlConfig {
     }
 
     public Optional<Double> getDouble(String key) {
-        return get(key, s -> s instanceof Double, o -> (Double) o).or(() -> getInt(key).map(i -> (double) i));
+        return getDoubleResult(key).value();
+    }
+
+    public YamlResult<Double> getDoubleResult(String key) {
+        return get(key, s -> s instanceof Double || s instanceof Integer, o -> {
+            if (o instanceof Double d) return d;
+            if (o instanceof Integer i) return (double) i;
+            throw new IllegalArgumentException("Wrong type");
+        }, "Double");
     }
 
     public Double getDoubleOrSet(String key, Double def) {
@@ -175,7 +201,11 @@ public class YamlConfig {
     }
 
     public Optional<Boolean> getBoolean(String key) {
-        return get(key, s -> s instanceof Boolean, o -> (Boolean) o);
+        return getBooleanResult(key).value();
+    }
+
+    public YamlResult<Boolean> getBooleanResult(String key) {
+        return get(key, s -> s instanceof Boolean, o -> (Boolean) o, "Boolean");
     }
 
     public Boolean getBooleanOrSet(String key, Boolean def) {
@@ -187,29 +217,63 @@ public class YamlConfig {
     }
 
     public Optional<List<String>> getStringList(String key) {
+        return getStringListResult(key).value();
+    }
+
+    public YamlResult<List<String>> getStringListResult(String key) {
         return get(key, o -> o instanceof Collection<?>, o -> {
             List<String> outList = new ArrayList<>();
             for (Object element : (Collection<?>) o) {
                 outList.add(Objects.toString(element));
             }
             return outList;
-        });
+        }, "List of Strings");
+    }
+
+    public Optional<List<YamlConfig>> getSectionList(String key) {
+        return getSectionListResult(key).value();
+    }
+
+    public YamlResult<List<YamlConfig>> getSectionListResult(String key) {
+        AtomicInteger counter = new AtomicInteger();
+        return get(key, o -> o instanceof Collection<?>, o -> {
+            List<YamlConfig> outList = new ArrayList<>();
+            for (Object element : (Collection<?>) o) {
+                if (!(element instanceof LinkedHashMap<?, ?> dataMap)) continue;
+                YamlConfig config = new YamlConfig(this, key + "[" + counter.getAndIncrement() + "]");
+                config.data = new DataMap(dataMap);
+                outList.add(config);
+            }
+            return outList;
+        }, "List of YAML Sections");
     }
 
     public Optional<YamlConfig> getSection(String key) {
+        return getSectionResult(key).value();
+    }
+
+    public YamlResult<YamlConfig> getSectionResult(String key) {
         return get(key, o -> o instanceof DataMap, o -> {
-            YamlConfig config = new YamlConfig(this);
+            YamlConfig config = new YamlConfig(this, key);
             config.data = (DataMap) o;
             return config;
-        });
+        }, "YAML Section");
     }
 
     public YamlConfig getOrCreateSection(String key) {
         var opt = getSection(key);
         if (opt.isPresent()) return opt.get();
-        YamlConfig out = new YamlConfig(this);
+        YamlConfig out = new YamlConfig(this, key);
         set(key, out);
         return out;
+    }
+
+    public <E extends Enum<E>> Optional<E> getEnum(String key, Function<String, E> valueOf, String enumClassName) {
+        return getEnumResult(key, valueOf, enumClassName).value();
+    }
+
+    public <E extends Enum<E>> YamlResult<E> getEnumResult(String key, Function<String, E> valueOf, String enumClassName) {
+        return get(key, o -> o instanceof String, o -> valueOf.apply(o.toString().toUpperCase()), "Enum " + enumClassName);
     }
 
     public void set(String key, Object value) {
@@ -217,6 +281,26 @@ public class YamlConfig {
 
         if (value instanceof YamlConfig yamlConfig) {
             set(key, yamlConfig.data);
+            return;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> out = new ArrayList<>();
+            boolean anyChange = false;
+            for (Object o : list) {
+                if (o instanceof YamlConfig yamlConfig) {
+                    out.add(yamlConfig.data);
+                    anyChange = true;
+                } else {
+                    out.add(o);
+                }
+            }
+            if (anyChange) {
+                set(key, out);
+                return;
+            }
+        }
+        if (value instanceof Enum<?>) {
+            set(key, String.valueOf(value));
             return;
         }
 
@@ -228,7 +312,7 @@ public class YamlConfig {
             YamlConfig section;
             if (opt.isEmpty()) {
                 if (value == null) return;
-                section = new YamlConfig(this);
+                section = new YamlConfig(this, key);
                 change = !Objects.equals(data.put(sectionKey, section.data), section.data);
             } else section = opt.get();
 
@@ -245,6 +329,34 @@ public class YamlConfig {
             }
         }
         if (change) setUnsavedChanges();
+    }
+
+    @Nullable
+    public String getKey() {
+        return key;
+    }
+
+    @Nullable
+    public String getFullKey() {
+        String key = this.key;
+        if (key == null) return null;
+
+        if (parent != null) {
+            String parentKey = parent.getFullKey();
+            if (parentKey != null) {
+                return parentKey + "." + key;
+            }
+        }
+        return key;
+    }
+
+    private String getFullKey(String subKey) {
+        String key = this.getFullKey();
+        if (key == null) {
+            return subKey;
+        }
+
+        return key + "." + subKey;
     }
 
     public boolean hasUnsavedChanges() {
@@ -275,22 +387,35 @@ public class YamlConfig {
         var data = this.data;
         if (data == null) return "YamlConfig[null]";
         StringBuilder builder = new StringBuilder();
-        toString(builder, 0, data);
+        toString(builder, 0, data, false);
         return builder.toString();
     }
 
-    private <T> Optional<T> get(String key, Predicate<Object> predicateInstanceOf, Function<Object, T> cast) {
+    private <T> YamlResult<T> get(String key, Predicate<Object> predicateInstanceOf, Function<Object, T> cast, String expectedType) {
         checkKey(key);
         int index = key.indexOf(".");
         if (index > 0) {
-            return getSection(key.substring(0, index)).flatMap(s -> s.get(key.substring(index + 1), predicateInstanceOf, cast));
+            YamlConfig section = getSection(key.substring(0, index)).orElse(null);
+            if (section == null) return YamlResult.empty(key, expectedType);
+            return section.get(key.substring(index + 1), predicateInstanceOf, cast, expectedType);
         }
-        return flatGet(key).filter(predicateInstanceOf).map(cast);
+        Optional<Object> rawValue = flatGet(key);
+        Optional<T> value;
+        try {
+            value = rawValue.filter(predicateInstanceOf).map(cast);
+        } catch (IllegalArgumentException e) {
+            value = Optional.empty();
+        }
+        return new YamlResult<>(getFullKey(key), value, rawValue, expectedType);
+    }
+
+    private Optional<Object> flatGet(String key) {
+        if (data == null) return Optional.empty();
+        return Optional.ofNullable(data.get(key));
     }
 
     private <T> T getOrSet(String key, Predicate<Object> predicateInstanceOf, Function<Object, T> cast, T def) {
-        Optional<T> opt = get(key, predicateInstanceOf, cast);
-        return opt.orElseGet(() -> {
+        return get(key, predicateInstanceOf, cast, null).orElseGet(() -> {
             set(key, def);
             return def;
         });
@@ -298,8 +423,7 @@ public class YamlConfig {
 
     private void checkKey(String key) {
         if (key == null) throw new IllegalArgumentException("Key can not be null");
-        if (key.endsWith(".") || key.startsWith("."))
-            throw new IllegalArgumentException("Key can not start or end with '.'");
+        if (key.endsWith(".") || key.startsWith(".")) throw new IllegalArgumentException("Key can not start or end with '.'");
         if (key.isBlank()) throw new IllegalArgumentException("Key can not be blank");
     }
 
@@ -308,15 +432,39 @@ public class YamlConfig {
         unsavedChanges = true;
     }
 
-    private void toString(StringBuilder builder, int indent, Map<?, ?> data) {
+    private void toString(StringBuilder builder, int indent, Map<?, ?> data, boolean skipFirstIndent) {
         if (data == null) return;
+        boolean first = true;
         for (Map.Entry<?, ?> entry : data.entrySet()) {
-            builder.append(" ".repeat(indent));
+            if (!first || !skipFirstIndent) {
+                builder.append(" ".repeat(indent));
+            }
+            first = false;
             builder.append(entry.getKey());
             builder.append(": ");
             if (entry.getValue() instanceof DataMap map) {
-                builder.append("\n");
-                toString(builder, indent + 2, map);
+                if (map.isEmpty()) {
+                    builder.append("[]");
+                } else {
+                    builder.append("\n");
+                    toString(builder, indent + 2, map, false);
+                }
+            } else if (entry.getValue() instanceof List<?> list) {
+                if (list.isEmpty()) {
+                    builder.append("[]");
+                } else {
+                    String indentString = " ".repeat(indent + 2);
+                    builder.append("\n");
+                    for (Object o : list) {
+                        builder.append(indentString);
+                        builder.append("- ");
+                        if (o instanceof Map<?, ?> dataMap) {
+                            toString(builder, indent + 4, dataMap, true);
+                        } else {
+                            builder.append(o.toString());
+                        }
+                    }
+                }
             } else {
                 builder.append(entry.getValue()).append("\n");
             }
@@ -331,7 +479,7 @@ public class YamlConfig {
                 if (entry.getValue() instanceof LinkedHashMap<?, ?> linkedHashMap) {
                     val = new DataMap(linkedHashMap);
                 }
-                put((String) entry.getKey(), val);
+                put(Objects.toString(entry.getKey()), val);
             }
         }
 
@@ -354,5 +502,10 @@ public class YamlConfig {
 
     public @Nullable File getFile() {
         return file;
+    }
+
+    @Nullable
+    YamlConfig getParent() {
+        return parent;
     }
 }

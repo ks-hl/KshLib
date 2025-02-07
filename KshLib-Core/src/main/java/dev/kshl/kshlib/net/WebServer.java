@@ -13,12 +13,19 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.annotation.Annotation;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -94,7 +101,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
         if (cf != null) return cf.trim();
 
         String forwarded = headers.getFirst("X-Forwarded-For");
-        if (forwarded==null || forwarded.isEmpty()) return sender;
+        if (forwarded == null || forwarded.isEmpty()) return sender;
         String[] forwardedFor = forwarded.split("\\s*,\\s*");
         if (forwardedFor.length < numberOfProxiesToResolve)
             throw new WebException(HTTPResponseCode.BAD_REQUEST, "Not enough X-Forwarded-For headers");
@@ -141,7 +148,26 @@ public abstract class WebServer implements Runnable, HttpHandler {
                         } catch (JSONException e) {
                             if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
                         }
-                        response = handle(request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn));
+                        request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
+                        for (Method method : this.getClass().getDeclaredMethods()) {
+                            if (!method.canAccess(this)) continue;
+                            Class<?>[] parameters = method.getParameterTypes();
+                            if (parameters.length != 1) continue;
+                            if (!Objects.equals(parameters[0], Request.class)) continue;
+                            Endpoint endpointAnnotation = null;
+                            for (Annotation annotation : method.getDeclaredAnnotations()) {
+                                if (annotation instanceof Endpoint endpoint1) {
+                                    endpointAnnotation = endpoint1;
+                                    break;
+                                }
+                            }
+                            if (endpointAnnotation == null) continue;
+                            String endpointValue = endpointAnnotation.value();
+                            if (!endpointValue.startsWith("/")) endpointValue = "/" + endpointValue;
+                            if (endpointValue.endsWith("/") && endpointValue.length() > 1) endpointValue = endpointValue.substring(0, endpointValue.length() - 1);
+
+                        }
+                        response = handle(request);
                         if (response == null) throw new WebException(HTTPResponseCode.NOT_FOUND);
                     }
                 } catch (WebException e) {
@@ -378,5 +404,19 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
     public final int getPort() {
         return port;
+    }
+
+    @Target(ElementType.METHOD)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface Endpoint {
+        /**
+         * The endpoint
+         */
+        String value() default "/";
+
+        /**
+         * The required request type
+         */
+        HTTPRequestType method() default HTTPRequestType.GET;
     }
 }
