@@ -18,6 +18,7 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -43,6 +44,9 @@ public abstract class WebServer implements Runnable, HttpHandler {
     private boolean closed;
     private HttpServer server;
     private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final List<Object> endpoints = new ArrayList<>() {{
+        add(WebServer.this);
+    }};
 
     public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, boolean requireJSONInput, String... origins) {
         this(port, numberOfProxiesToResolve, maxRequestLength, new RateLimitParams(5, 5000L), requireJSONInput, origins);
@@ -108,23 +112,27 @@ public abstract class WebServer implements Runnable, HttpHandler {
         return forwardedFor[forwardedFor.length - numberOfProxiesToResolve];
     }
 
+    public void registerEndpoint(Object endpoint) {
+        endpoints.add(endpoint);
+    }
+
     @Override
-    public void handle(HttpExchange t) {
+    public final void handle(HttpExchange t) {
         final long requestTime = System.currentTimeMillis();
         executor.submit(() -> {
             Timer timer = new Timer(1);
             String sender = null;
             String endpoint = null;
             try {
-                String requestString = null;
-                Response response;
+                String requestString;
+                Response response = null;
                 Request request = null;
                 String msg = null;
 
                 try {
                     sender = parseXForwardedFor(t.getRemoteAddress().getAddress().toString(), t.getRequestHeaders());
                     if (sender.startsWith("/")) sender = sender.substring(1);
-                    endpoint = Optional.ofNullable(t.getRequestURI().getPath()).orElse("/");
+                    endpoint = Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/");
                     final String queryString = t.getRequestURI().getQuery();
                     msg = sender + " " + t.getRequestMethod() + " " + endpoint + (queryString != null ? "?" + queryString : "") + " - %d";
 
@@ -149,25 +157,9 @@ public abstract class WebServer implements Runnable, HttpHandler {
                             if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
                         }
                         request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
-                        for (Method method : this.getClass().getDeclaredMethods()) {
-                            if (!method.canAccess(this)) continue;
-                            Class<?>[] parameters = method.getParameterTypes();
-                            if (parameters.length != 1) continue;
-                            if (!Objects.equals(parameters[0], Request.class)) continue;
-                            Endpoint endpointAnnotation = null;
-                            for (Annotation annotation : method.getDeclaredAnnotations()) {
-                                if (annotation instanceof Endpoint endpoint1) {
-                                    endpointAnnotation = endpoint1;
-                                    break;
-                                } finish adding endpoint
-                            }
-                            if (endpointAnnotation == null) continue;
-                            String endpointValue = endpointAnnotation.value();
-                            if (!endpointValue.startsWith("/")) endpointValue = "/" + endpointValue;
-                            if (endpointValue.endsWith("/") && endpointValue.length() > 1) endpointValue = endpointValue.substring(0, endpointValue.length() - 1);
 
-                        }
-                        response = handle(request);
+                        response = handleEndpoints(request);
+                        if (response == null) response = handle(request);
                         if (response == null) throw new WebException(HTTPResponseCode.NOT_FOUND);
                     }
                 } catch (WebException e) {
@@ -234,7 +226,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
                             endCause.set("Error: " + e.getClass().getName() + (e.getMessage() == null ? "" : (" - " + e.getMessage())));
                         }
                     } finally {
-                        logRequest(request, response, "Stream ended @ " + request.endpoint() + ", cause: " + endCause.get());
+                        logRequest(request, response, "Stream ended @ " + endpoint + ", cause: " + endCause.get());
                     }
                 } else {
 
@@ -251,13 +243,75 @@ public abstract class WebServer implements Runnable, HttpHandler {
         });
     }
 
+    private Response handleEndpoints(Request request) throws Throwable {
+        for (Object endpointHandler : endpoints) {
+            for (Method method : endpointHandler.getClass().getDeclaredMethods()) {
+                if (!method.canAccess(endpointHandler)) continue;
+                Class<?>[] parameters = method.getParameterTypes();
+                if (parameters.length != 1) continue;
+                if (!Objects.equals(parameters[0], Request.class)) continue;
+                if (!Objects.equals(method.getReturnType(), Response.class)) continue;
+                Endpoint endpointAnnotation = null;
+                for (Annotation annotation : method.getDeclaredAnnotations()) {
+                    if (annotation instanceof Endpoint endpoint1) {
+                        endpointAnnotation = endpoint1;
+                        break;
+                    }
+                }
+
+                if (endpointAnnotation == null) continue;
+
+                boolean match = false;
+                String endpointValue = endpointAnnotation.value();
+                if (endpointAnnotation.regex()) {
+                    match = request.endpoint().matches(endpointValue);
+                } else {
+                    for (String endpointValuePart : endpointValue.split(",")) {
+                        endpointValuePart = normalizeEndpointString(endpointValuePart.trim());
+                        if (request.endpoint().equalsIgnoreCase(endpointValuePart)) {
+                            match = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (match) {
+                    try {
+                        return (Response) method.invoke(endpointHandler, request);
+                    } catch (InvocationTargetException e) {
+                        throw e.getTargetException();
+                    } catch (IllegalAccessException ignored) {
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalizes the endpoint string so that it has a leading '/' and no trailing '/'.
+     */
+    private String normalizeEndpointString(String endpoint) {
+        endpoint = endpoint.trim();
+        if (endpoint.equals("/")) return endpoint;
+        if (endpoint.isBlank()) return "/";
+
+        if (endpoint.endsWith("/")) endpoint = endpoint.substring(0, endpoint.length() - 1);
+        if (!endpoint.startsWith("/")) endpoint = "/" + endpoint;
+
+        return endpoint;
+    }
+
     public abstract void print(String msg, Throwable t);
 
     public abstract void info(String msg);
 
     public abstract void warning(String msg);
 
-    protected abstract Response handle(Request request) throws WebException;
+    protected Response handle(Request request) throws WebException {
+        return null;
+    }
 
     public record Request(long requestTime, String sender, String endpoint, HTTPRequestType type,
                           @Nonnull Headers headers, @Nonnull Map<String, String> query,
@@ -410,7 +464,8 @@ public abstract class WebServer implements Runnable, HttpHandler {
     @Retention(RetentionPolicy.RUNTIME)
     public @interface Endpoint {
         /**
-         * The endpoint
+         * The endpoint. May be multiple values separated by commas, or regex if the {@link #regex()} flag is set.
+         * If the {@link #regex()} flag is set, commas are ignored and the entire string is considered one pattern.
          */
         String value() default "/";
 
@@ -418,5 +473,11 @@ public abstract class WebServer implements Runnable, HttpHandler {
          * The required request type
          */
         HTTPRequestType method() default HTTPRequestType.GET;
+
+        /**
+         * Whether to check the provided {@link #value()} with Regex. Commas within {@link #value()} are ignored if using regex.
+         * Endpoints will always start with a leading '/' and have no trailing '/'. Default value handling ignores this, but regex is specific.
+         */
+        boolean regex() default false;
     }
 }

@@ -10,27 +10,13 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 public class WebServerTest {
     @Test
     @Timeout(value = 5000L)
     public void testWebServer() throws IOException, ExecutionException, InterruptedException {
-        WebServer webServer = new WebServer(0, 0, 1024, new WebServer.RateLimitParams(9, 1000000L), true) {
-            @Override
-            public void print(String msg, Throwable t) {
-                warning(msg);
-                t.printStackTrace();
-            }
-
-            @Override
-            public void info(String msg) {
-                System.out.println(msg);
-            }
-
-            @Override
-            public void warning(String msg) {
-                System.err.println(msg);
-            }
-
+        WebServer webServer = new TestWebServer() {
             @Override
             protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint, int numberOfRequests) throws WebException {
                 if (endpoint.equals("/ban")) throw new WebException(HTTPResponseCode.FORBIDDEN);
@@ -104,5 +90,65 @@ public class WebServerTest {
         assert NetUtil.get("http://localhost:" + webServer.getPort() + "/").request().getResponseCode() == HTTPResponseCode.TOO_MANY_REQUESTS;
 
         webServer.close();
+    }
+
+    @Test
+    public void testAnnotations() throws IOException, InterruptedException {
+        WebServer webServer = new TestWebServer() {
+            @Endpoint(
+                    value = "annotation,annotationCSV"
+            )
+            public Response annotation(Request request) {
+                return new Response().body("annotation");
+            }
+        };
+        webServer.registerEndpoint(new Object() {
+            @WebServer.Endpoint(value = "/annotation2/")
+            public WebServer.Response annotation2(WebServer.Request request) {
+                return new WebServer.Response().body("annotation2");
+            }
+
+            @WebServer.Endpoint(value = "error422/")
+            public WebServer.Response error422(WebServer.Request request) throws WebServer.WebException {
+                throw new WebServer.WebException(HTTPResponseCode.UNPROCESSABLE_ENTITY);
+            }
+        });
+        new Thread(webServer).start();
+
+        //noinspection LoopConditionNotUpdatedInsideLoop
+        while (webServer.getPort() <= 0)
+            Thread.onSpinWait();
+
+        assertEquals("annotation", NetUtil.get("http://localhost:" + webServer.getPort() + "/annotation").request().getBody());
+        assertEquals("annotation", NetUtil.get("http://localhost:" + webServer.getPort() + "/annotationCSV").request().getBody());
+        assertEquals("annotation2", NetUtil.get("http://localhost:" + webServer.getPort() + "/annotation2").request().getBody());
+        assertEquals(HTTPResponseCode.UNPROCESSABLE_ENTITY, NetUtil.get("http://localhost:" + webServer.getPort() + "/error422").request().getResponseCode());
+    }
+
+    private static class TestWebServer extends WebServer {
+        public TestWebServer() {
+            super(0, 0, 1024, new WebServer.RateLimitParams(9, 1000000L), true);
+        }
+
+        @Override
+        public void print(String msg, Throwable t) {
+            warning(msg);
+            t.printStackTrace();
+        }
+
+        @Override
+        public void info(String msg) {
+            System.out.println(msg);
+        }
+
+        @Override
+        public void warning(String msg) {
+            System.err.println(msg);
+        }
+
+        @Override
+        public Response handle(Request request) throws WebException {
+            return null;
+        }
     }
 }
