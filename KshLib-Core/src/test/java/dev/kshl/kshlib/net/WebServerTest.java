@@ -11,6 +11,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class WebServerTest {
     @Test
@@ -113,6 +114,23 @@ public class WebServerTest {
                 throw new WebServer.WebException(HTTPResponseCode.UNPROCESSABLE_ENTITY);
             }
         });
+        assertThrows(IllegalArgumentException.class, () -> webServer.registerEndpoint(new Object() {
+            @WebServer.Endpoint
+            public void method(WebServer.Request request) {
+            }
+        }));
+        assertThrows(IllegalArgumentException.class, () -> webServer.registerEndpoint(new Object() {
+            @WebServer.Endpoint
+            public WebServer.Response method(String wrong) {
+                return null;
+            }
+        }));
+        assertThrows(IllegalArgumentException.class, () -> webServer.registerEndpoint(new Object() {
+            @WebServer.Endpoint
+            public WebServer.Response method(WebServer.Request request, String wrong) {
+                return null;
+            }
+        }));
         new Thread(webServer).start();
 
         //noinspection LoopConditionNotUpdatedInsideLoop

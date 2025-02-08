@@ -24,6 +24,7 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -113,6 +114,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     public void registerEndpoint(Object endpoint) {
+        getEndpointAnnotatedMethods(endpoint); // Checks for incorrectly formatted @Endpoint methods
         endpoints.add(endpoint);
     }
 
@@ -160,7 +162,13 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
                         response = handleEndpoints(request);
                         if (response == null) response = handle(request);
-                        if (response == null) throw new WebException(HTTPResponseCode.NOT_FOUND);
+                        if (response == null) {
+                            if (endpoint.equalsIgnoreCase("/favicon.ico")) {
+                                response = new Response().code(HTTPResponseCode.NOT_FOUND); // 404 gracefully because favicon.ico is expected to be requested frequently during testing
+                            } else {
+                                throw new WebException(HTTPResponseCode.NOT_FOUND);
+                            }
+                        }
                     }
                 } catch (WebException e) {
                     response = new Response().code(e.responseCode).body(new JSONObject().put("error", e.userErrorMessage));
@@ -245,25 +253,10 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
     private Response handleEndpoints(Request request) throws Throwable {
         for (Object endpointHandler : endpoints) {
-            for (Method method : endpointHandler.getClass().getDeclaredMethods()) {
-                if (!method.canAccess(endpointHandler)) continue;
-                Class<?>[] parameters = method.getParameterTypes();
-                if (parameters.length != 1) continue;
-                if (!Objects.equals(parameters[0], Request.class)) continue;
-                if (!Objects.equals(method.getReturnType(), Response.class)) continue;
-                Endpoint endpointAnnotation = null;
-                for (Annotation annotation : method.getDeclaredAnnotations()) {
-                    if (annotation instanceof Endpoint endpoint1) {
-                        endpointAnnotation = endpoint1;
-                        break;
-                    }
-                }
-
-                if (endpointAnnotation == null) continue;
-
+            for (Map.Entry<Method, Endpoint> method : getEndpointAnnotatedMethods(endpointHandler).entrySet()) {
                 boolean match = false;
-                String endpointValue = endpointAnnotation.value();
-                if (endpointAnnotation.regex()) {
+                String endpointValue = method.getValue().value();
+                if (method.getValue().regex()) {
                     match = request.endpoint().matches(endpointValue);
                 } else {
                     for (String endpointValuePart : endpointValue.split(",")) {
@@ -277,7 +270,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
                 if (match) {
                     try {
-                        return (Response) method.invoke(endpointHandler, request);
+                        return (Response) method.getKey().invoke(endpointHandler, request);
                     } catch (InvocationTargetException e) {
                         throw e.getTargetException();
                     } catch (IllegalAccessException ignored) {
@@ -287,6 +280,28 @@ public abstract class WebServer implements Runnable, HttpHandler {
         }
 
         return null;
+    }
+
+    private Map<Method, Endpoint> getEndpointAnnotatedMethods(Object endpointHandler) {
+        Map<Method, Endpoint> methods = new LinkedHashMap<>();
+        for (Method method : endpointHandler.getClass().getDeclaredMethods()) {
+            if (!method.canAccess(endpointHandler)) continue;
+            Endpoint endpointAnnotation = null;
+            for (Annotation annotation : method.getDeclaredAnnotations()) {
+                if (annotation instanceof Endpoint endpoint1) {
+                    endpointAnnotation = endpoint1;
+                    break;
+                }
+            }
+            if (endpointAnnotation == null) continue;
+
+            Class<?>[] parameters = method.getParameterTypes();
+            if (parameters.length != 1 || !Objects.equals(parameters[0], Request.class)) throw new IllegalArgumentException("Methods annotated with @Endpoint must accept exactly 1 argument, WebServer.Request");
+            if (!Objects.equals(method.getReturnType(), Response.class)) throw new IllegalArgumentException("Methods annotated with @Endpoint must return WebServer.Response");
+
+            methods.put(method, endpointAnnotation);
+        }
+        return methods;
     }
 
     /**
