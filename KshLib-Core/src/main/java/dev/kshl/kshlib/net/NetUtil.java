@@ -146,6 +146,7 @@ public class NetUtil {
         private final boolean followRedirects;
         private String[] headers;
         private Duration timeout;
+        private boolean secure = true;
 
         public Request(String url, HTTPRequestType requestType, @Nullable String body, boolean followRedirects, String... headers) {
             this.url = url;
@@ -176,21 +177,39 @@ public class NetUtil {
         }
 
         public Response request() throws IOException {
-            Response response = request_();
-            if (!followRedirects) return response;
-            if (Set.of(301, 302, 307, 308).contains(response.getResponseCode().getCode())) {
-                var locationList = response.headers().get("location");
-                if (locationList == null || locationList.isEmpty()) locationList = response.headers().get("Location");
-                if (locationList == null || locationList.isEmpty()) return response;
-                String redirectTo = locationList.get(0);
-                if (redirectTo.startsWith("/") || !redirectTo.startsWith("http")) {
-                    if (!redirectTo.startsWith("/")) redirectTo = "/" + redirectTo;
-                    redirectTo = url.replaceAll("(?<!/)/(?!/).*", "") + redirectTo;
+            if (timeout == null) timeout = Duration.ofSeconds(3);
+
+            HttpClient.Builder clientBuilder = HttpClient.newBuilder().connectTimeout(timeout);
+            if (followRedirects) clientBuilder.followRedirects(HttpClient.Redirect.ALWAYS);
+
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().uri(URI.create(getURL())).setHeader("User-Agent", "KshLib");
+
+            if (getHeaders() != null && getHeaders().length > 0) requestBuilder.headers(getHeaders());
+
+            switch (getRequestType()) {
+                case POST -> requestBuilder.POST(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
+                case PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
+                default -> {
+                    if (getBody() != null)
+                        throw new IllegalArgumentException("Cannot " + getRequestType() + " with a body");
                 }
-                if (redirectTo.equalsIgnoreCase(url)) return response;
-                return new Request(url, requestType, body, true, headers).request();
             }
-            return response;
+
+            HttpClient client = clientBuilder.build();
+            HttpRequest httpRequest = requestBuilder.build();
+            HttpResponse<String> httpResponse;
+            try {
+                httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            } catch (InterruptedException e) {
+                throw new IOException("Request interrupted");
+            }
+            if (isSecure() && !getURL().startsWith("http:")) {
+                if (httpResponse.sslSession().isEmpty() || !httpResponse.sslSession().get().isValid()) {
+                    throw new IOException("Insecure connection");
+                }
+            }
+
+            return new Response(httpResponse.headers().map(), httpResponse.statusCode(), httpResponse.body());
         }
 
         public void requestCompletable(CompletableFuture<Response> completableFuture) {
@@ -207,34 +226,6 @@ public class NetUtil {
             CompletableFuture<Response> out = new CompletableFuture<>();
             requestCompletable(out);
             return out;
-        }
-
-        @Nonnull
-        private Response request_() throws IOException {
-            if (timeout == null) timeout = Duration.ofSeconds(3);
-            HttpClient client = HttpClient.newBuilder().connectTimeout(timeout).build();
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().uri(URI.create(getURL())).setHeader("User-Agent", "KSHLib");
-
-            if (getHeaders() != null && getHeaders().length > 0) requestBuilder.headers(getHeaders());
-
-            switch (getRequestType()) {
-                case POST -> requestBuilder.POST(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
-                case PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
-                default -> {
-                    if (getBody() != null)
-                        throw new IllegalArgumentException("Cannot " + getRequestType() + " with a body");
-                }
-            }
-
-            HttpRequest httpRequest = requestBuilder.build();
-            HttpResponse<String> httpResponse;
-            try {
-                httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            } catch (InterruptedException e) {
-                throw new IOException("Request interrupted");
-            }
-
-            return new Response(httpResponse.headers().map(), httpResponse.statusCode(), httpResponse.body());
         }
 
         public String getURL() {
@@ -270,6 +261,15 @@ public class NetUtil {
         public Request body(String body) {
             this.body = body;
             return this;
+        }
+
+        public Request secure(boolean secure) {
+            this.secure = secure;
+            return this;
+        }
+
+        public boolean isSecure() {
+            return secure;
         }
     }
 
