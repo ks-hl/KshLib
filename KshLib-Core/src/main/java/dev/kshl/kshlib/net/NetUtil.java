@@ -3,6 +3,7 @@ package dev.kshl.kshlib.net;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.File;
@@ -114,26 +115,32 @@ public class NetUtil {
         return "Basic " + Base64.getEncoder().encodeToString((user + ":" + password).getBytes());
     }
 
+    @CheckReturnValue
     public static Request get(String url, String... headers) {
         return get(url, false, headers);
     }
 
+    @CheckReturnValue
     public static Request get(String url, boolean followRedirects, String... headers) {
         return new Request(url, HTTPRequestType.GET, null, followRedirects, headers);
     }
 
+    @CheckReturnValue
     public static Request put(String url, String body, String... headers) {
         return put(url, body, false, headers);
     }
 
+    @CheckReturnValue
     public static Request put(String url, String body, boolean followRedirects, String... headers) {
         return new Request(url, HTTPRequestType.PUT, body, followRedirects, headers);
     }
 
+    @CheckReturnValue
     public static Request post(String url, String body, String... headers) {
         return post(url, body, false, headers);
     }
 
+    @CheckReturnValue
     public static Request post(String url, String body, boolean followRedirects, String... headers) {
         return new Request(url, HTTPRequestType.POST, body, followRedirects, headers);
     }
@@ -146,7 +153,6 @@ public class NetUtil {
         private final boolean followRedirects;
         private String[] headers;
         private Duration timeout;
-        private boolean secure = true;
 
         public Request(String url, HTTPRequestType requestType, @Nullable String body, boolean followRedirects, String... headers) {
             this.url = url;
@@ -203,11 +209,6 @@ public class NetUtil {
             } catch (InterruptedException e) {
                 throw new IOException("Request interrupted");
             }
-            if (isSecure() && !getURL().startsWith("http:")) {
-                if (httpResponse.sslSession().isEmpty() || !httpResponse.sslSession().get().isValid()) {
-                    throw new IOException("Insecure connection");
-                }
-            }
 
             return new Response(httpResponse.headers().map(), httpResponse.statusCode(), httpResponse.body());
         }
@@ -261,15 +262,6 @@ public class NetUtil {
         public Request body(String body) {
             this.body = body;
             return this;
-        }
-
-        public Request secure(boolean secure) {
-            this.secure = secure;
-            return this;
-        }
-
-        public boolean isSecure() {
-            return secure;
         }
     }
 

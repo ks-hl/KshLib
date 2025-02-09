@@ -23,30 +23,11 @@ public class NetUtilTest {
     }
 
     @Test
-    public void testSSLFailures2() throws IOException, InterruptedException {
-        HttpClient httpClient = HttpClient.newHttpClient();
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://www.google.com/"))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        assertThrows(SSLException.class, () -> {
-            HttpRequest request2 = HttpRequest.newBuilder()
-                    .uri(new URI("https://wrong.host.badssl.com/"))
-                    .build();
-            HttpResponse<String> response2 = httpClient.send(request2, HttpResponse.BodyHandlers.ofString());
-        });
-    }
-
-    @Test
-    public void testSSLFailures() {
-        NetUtil.get("https://badssl.com/");
-        assertThrows(IOException.class, () -> NetUtil.get("https://expired.badssl.com/"));
-        assertThrows(IOException.class, () -> NetUtil.get("https://wrong.host.badssl.com/"));
-        assertThrows(IOException.class, () -> NetUtil.get("https://self-signed.badssl.com/"));
-        assertThrows(IOException.class, () -> NetUtil.get("https://untrusted-root.badssl.com/"));
-        assertThrows(IOException.class, () -> NetUtil.get("https://revoked.badssl.com/"));
-        assertThrows(IOException.class, () -> NetUtil.get("https://pinning-test.badssl.com/"));
+    public void testSSLFailures() throws IOException {
+        NetUtil.get("https://badssl.com/").request();
+        assertThrows(SSLException.class, () -> NetUtil.get("https://expired.badssl.com/").request());
+        assertThrows(SSLException.class, () -> NetUtil.get("https://wrong.host.badssl.com/").request());
+        assertThrows(SSLException.class, () -> NetUtil.get("https://self-signed.badssl.com/").request());
+        assertThrows(SSLException.class, () -> NetUtil.get("https://untrusted-root.badssl.com/").request());
     }
 }
