@@ -21,10 +21,10 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
 import java.util.function.Function;
 
 public class NetUtil {
@@ -153,6 +153,7 @@ public class NetUtil {
         private final boolean followRedirects;
         private String[] headers;
         private Duration timeout;
+        private Flow.Subscriber<String> streamSubscriber;
 
         public Request(String url, HTTPRequestType requestType, @Nullable String body, boolean followRedirects, String... headers) {
             this.url = url;
@@ -203,14 +204,21 @@ public class NetUtil {
 
             HttpClient client = clientBuilder.build();
             HttpRequest httpRequest = requestBuilder.build();
-            HttpResponse<String> httpResponse;
+            HttpResponse<?> httpResponse;
+            String body;
             try {
-                httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                if (streamSubscriber == null) {
+                    httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                    body = (String) httpResponse.body();
+                } else {
+                    httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.fromLineSubscriber(streamSubscriber));
+                    body = null;
+                }
             } catch (InterruptedException e) {
                 throw new IOException("Request interrupted");
             }
 
-            return new Response(httpResponse.headers().map(), httpResponse.statusCode(), httpResponse.body());
+            return new Response(httpResponse.headers().map(), httpResponse.statusCode(), body);
         }
 
         public void requestCompletable(CompletableFuture<Response> completableFuture) {
@@ -261,6 +269,11 @@ public class NetUtil {
 
         public Request body(String body) {
             this.body = body;
+            return this;
+        }
+
+        public Request streamSubscriber(Flow.Subscriber<String> streamSubscriber) {
+            this.streamSubscriber = streamSubscriber;
             return this;
         }
     }

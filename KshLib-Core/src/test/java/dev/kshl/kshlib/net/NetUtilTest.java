@@ -1,15 +1,14 @@
 package dev.kshl.kshlib.net;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import javax.net.ssl.SSLException;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.security.cert.CertificateException;
 import java.util.TimeZone;
+import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -29,5 +28,25 @@ public class NetUtilTest {
         assertThrows(SSLException.class, () -> NetUtil.get("https://wrong.host.badssl.com/").request());
         assertThrows(SSLException.class, () -> NetUtil.get("https://self-signed.badssl.com/").request());
         assertThrows(SSLException.class, () -> NetUtil.get("https://untrusted-root.badssl.com/").request());
+    }
+
+    @Test
+    @Timeout(value = 5)
+    public void testStream() throws IOException {
+        AtomicInteger counter = new AtomicInteger();
+        NetUtil.get("https://sse.dev/test").streamSubscriber(new SubscriberImpl() {
+            @Override
+            public void onError(Throwable throwable) {
+                throwable.printStackTrace();
+            }
+
+            @Override
+            public void onNext(String s) {
+                int count = counter.getAndIncrement();
+                System.out.println(count + ". " + s);
+                if (count >= 3) close();
+            }
+        }).request();
+        System.out.println("Returned");
     }
 }
