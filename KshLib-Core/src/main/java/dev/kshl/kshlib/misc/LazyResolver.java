@@ -32,6 +32,11 @@ public class LazyResolver<T> {
         return getOpt(true);
     }
 
+    public void set(T value) {
+        this.value = value;
+        this.resolved = true;
+    }
+
     public boolean isResolved() {
         return this.resolved;
     }

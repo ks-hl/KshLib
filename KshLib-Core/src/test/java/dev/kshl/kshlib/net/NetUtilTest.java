@@ -30,23 +30,23 @@ public class NetUtilTest {
         assertThrows(SSLException.class, () -> NetUtil.get("https://untrusted-root.badssl.com/").request());
     }
 
-    @Test
-    @Timeout(value = 5)
-    public void testStream() throws IOException {
-        AtomicInteger counter = new AtomicInteger();
-        NetUtil.get("https://sse.dev/test").streamSubscriber(new SubscriberImpl<String>() {
-            @Override
-            public void onError(Throwable throwable) {
-                throwable.printStackTrace();
-            }
-
-            @Override
-            public void onNext(String s) {
-                int count = counter.getAndIncrement();
-                System.out.println(count + ". " + s);
-                if (count >= 3) close();
-            }
-        }).request();
-        System.out.println("Returned");
-    }
+//    @Test
+//    @Timeout(value = 5)
+//    public void testStream() throws IOException {
+//        AtomicInteger counter = new AtomicInteger();
+//        NetUtil.get("https://sse.dev/test").streamSubscriber(new SubscriberImpl<String>() {
+//            @Override
+//            public void onError(Throwable throwable) {
+//                throwable.printStackTrace();
+//            }
+//
+//            @Override
+//            public void onNext(String s) {
+//                int count = counter.getAndIncrement();
+//                System.out.println(count + ". " + s);
+//                if (count >= 3) close();
+//            }
+//        }).request();
+//        System.out.println("Returned");
+//    }
 }

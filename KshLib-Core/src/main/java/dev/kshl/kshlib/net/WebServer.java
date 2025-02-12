@@ -20,6 +20,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -285,6 +286,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     private Map<Method, Endpoint> getEndpointAnnotatedMethods(Object endpointHandler) {
         Map<Method, Endpoint> methods = new LinkedHashMap<>();
         for (Method method : endpointHandler.getClass().getDeclaredMethods()) {
+            if (Modifier.isStatic(method.getModifiers())) continue;
             if (!method.canAccess(endpointHandler)) continue;
             Endpoint endpointAnnotation = null;
             for (Annotation annotation : method.getDeclaredAnnotations()) {
@@ -296,8 +298,10 @@ public abstract class WebServer implements Runnable, HttpHandler {
             if (endpointAnnotation == null) continue;
 
             Class<?>[] parameters = method.getParameterTypes();
-            if (parameters.length != 1 || !Objects.equals(parameters[0], Request.class)) throw new IllegalArgumentException("Methods annotated with @Endpoint must accept exactly 1 argument, WebServer.Request");
-            if (!Objects.equals(method.getReturnType(), Response.class)) throw new IllegalArgumentException("Methods annotated with @Endpoint must return WebServer.Response");
+            if (parameters.length != 1 || !Objects.equals(parameters[0], Request.class))
+                throw new IllegalArgumentException("Methods annotated with @Endpoint must accept exactly 1 argument, WebServer.Request");
+            if (!Objects.equals(method.getReturnType(), Response.class))
+                throw new IllegalArgumentException("Methods annotated with @Endpoint must return WebServer.Response");
 
             methods.put(method, endpointAnnotation);
         }
