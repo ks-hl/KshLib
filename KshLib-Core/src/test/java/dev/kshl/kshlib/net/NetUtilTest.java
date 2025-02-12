@@ -34,7 +34,7 @@ public class NetUtilTest {
     @Timeout(value = 5)
     public void testStream() throws IOException {
         AtomicInteger counter = new AtomicInteger();
-        NetUtil.get("https://sse.dev/test").streamSubscriber(new SubscriberImpl() {
+        NetUtil.get("https://sse.dev/test").streamSubscriber(new SubscriberImpl<String>() {
             @Override
             public void onError(Throwable throwable) {
                 throwable.printStackTrace();
