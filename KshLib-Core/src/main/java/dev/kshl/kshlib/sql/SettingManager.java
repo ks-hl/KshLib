@@ -8,9 +8,9 @@ import java.sql.SQLException;
 import java.util.Objects;
 
 public abstract class SettingManager<T> {
-    private final ConnectionManager sql;
+    final ConnectionManager sql;
     private final String table;
-    private final MapCache<Integer, T> cache = new MapCache<>(3600000L, 3600000L, true);
+    final MapCache<Integer, T> cache = new MapCache<>(3600000L, 3600000L, true);
     private final T def;
     private final String sqlType;
     private final ResultSetFunction<T> retrievalFunction;
@@ -186,6 +186,26 @@ public abstract class SettingManager<T> {
             else {
                 throw new ClassCastException("Value is wrong type. " + value + (value == null ? "" : (", " + value.getClass().getName())));
             }
+        }
+
+        public void increment(int uid) throws SQLException, BusyException {
+            increment(uid, 1);
+        }
+
+        public void decrement(int uid) throws SQLException, BusyException {
+            increment(uid, -1);
+        }
+
+        public void increment(int uid, int amount) throws SQLException, BusyException {
+            sql.executeTransaction(connection -> {
+                try {
+                    sql.execute(connection, "INSERT INTO " + getTableName() + " (uid,value) VALUES (?,?)", uid, amount);
+                } catch (SQLException e) {
+                    if (!ConnectionManager.isConstraintViolation(e)) throw e;
+                    sql.execute(connection, "UPDATE " + getTableName() + " SET value=value+? WHERE uid=?", amount, uid);
+                }
+                cache.remove(uid);
+            }, 3000L);
         }
 
         @Override
