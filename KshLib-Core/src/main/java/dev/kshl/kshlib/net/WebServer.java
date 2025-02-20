@@ -21,6 +21,7 @@ import java.lang.annotation.Target;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -253,6 +254,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     private Response handleEndpoints(Request request) throws Throwable {
+        boolean foundButWrongMethod = false;
         for (Object endpointHandler : endpoints) {
             for (Map.Entry<Method, Endpoint> method : getEndpointAnnotatedMethods(endpointHandler).entrySet()) {
                 boolean match = false;
@@ -269,15 +271,55 @@ public abstract class WebServer implements Runnable, HttpHandler {
                     }
                 }
 
-                if (match) {
-                    try {
-                        return (Response) method.getKey().invoke(endpointHandler, request);
-                    } catch (InvocationTargetException e) {
-                        throw e.getTargetException();
-                    } catch (IllegalAccessException ignored) {
+                if (!match) continue;
+
+                if (method.getValue().method() != request.type()) {
+                    // Wait until end to throw error in case there are multiple endpoints defined with the same name but different methods
+                    foundButWrongMethod = true;
+                    continue;
+                }
+
+                List<Object> args = new ArrayList<>();
+
+                for (Parameter parameter : method.getKey().getParameters()) {
+                    boolean found = false;
+                    if (parameter.getType().equals(Request.class)) {
+                        args.add(request);
+                    } else {
+                        for (Annotation annotation : parameter.getAnnotations()) {
+                            Object value = null;
+                            if (annotation instanceof RequestHeaderParam requestHeaderParam) {
+                                if (parameter.getType().equals(String.class)) {
+                                    value = request.headers().getFirst(requestHeaderParam.value());
+                                    if (requestHeaderParam.required() && value == null) {
+                                        throw new WebException(HTTPResponseCode.UNPROCESSABLE_ENTITY, "Missing required header " + requestHeaderParam.value());
+                                    }
+                                }
+                            } else if (annotation instanceof RequestQueryParam requestQueryParam) {
+                                if (parameter.getType().equals(String.class)) {
+                                    value = request.headers().getFirst(requestHeaderParam.value());
+                                    if (requestHeaderParam.required() && value == null) {
+                                        throw new WebException(HTTPResponseCode.UNPROCESSABLE_ENTITY, "Missing required header " + requestHeaderParam.value());
+                                    }
+                                }
+                            } else if (annotation instanceof RequestBody requestBody) {
+
+                            }
+                        }
                     }
                 }
+
+                try {
+                    return (Response) method.getKey().invoke(endpointHandler, args.toArray());
+                } catch (InvocationTargetException e) {
+                    throw e.getTargetException();
+                } catch (IllegalAccessException ignored) {
+                    // Just pretend the endpoint doesn't exist
+                }
             }
+        }
+        if (foundButWrongMethod) {
+            throw new WebException(HTTPResponseCode.METHOD_NOT_ALLOWED);
         }
 
         return null;
@@ -297,9 +339,6 @@ public abstract class WebServer implements Runnable, HttpHandler {
             }
             if (endpointAnnotation == null) continue;
 
-            Class<?>[] parameters = method.getParameterTypes();
-            if (parameters.length != 1 || !Objects.equals(parameters[0], Request.class))
-                throw new IllegalArgumentException("Methods annotated with @Endpoint must accept exactly 1 argument, WebServer.Request");
             if (!Objects.equals(method.getReturnType(), Response.class))
                 throw new IllegalArgumentException("Methods annotated with @Endpoint must return WebServer.Response");
 
@@ -498,5 +537,28 @@ public abstract class WebServer implements Runnable, HttpHandler {
          * Endpoints will always start with a leading '/' and have no trailing '/'. Default value handling ignores this, but regex is specific.
          */
         boolean regex() default false;
+    }
+
+
+    @Target(ElementType.PARAMETER)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface RequestQueryParam {
+        String value();
+
+        boolean required() default false;
+    }
+
+    @Target(ElementType.PARAMETER)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface RequestHeaderParam {
+        String value();
+
+        boolean required() default false;
+    }
+
+    @Target(ElementType.PARAMETER)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface RequestBody {
+        boolean required() default false;
     }
 }
