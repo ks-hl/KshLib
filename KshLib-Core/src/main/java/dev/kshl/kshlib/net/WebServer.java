@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import dev.kshl.kshlib.misc.StackUtil;
 import dev.kshl.kshlib.misc.Timer;
+import dev.kshl.kshlib.sql.SQLAPIKeyManager;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -23,6 +24,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -81,9 +83,13 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     public void start() {
+        start(new InetSocketAddress(port));
+    }
+
+    public void start(InetSocketAddress inetSocketAddress) {
         info("Starting web server on port " + port + "...");
         try {
-            server = HttpServer.create(new InetSocketAddress(port), 0);
+            server = HttpServer.create(inetSocketAddress, 0);
 
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -340,6 +346,19 @@ public abstract class WebServer implements Runnable, HttpHandler {
         @Nonnull
         public JSONObject bodyJSONOrEmpty() {
             return bodyJSON() == null ? new JSONObject() : bodyJSON();
+        }
+
+        @Nullable
+        public SQLAPIKeyManager.APIKeyPair getAPIKey() {
+            String base64 = headers().getFirst("Authorization");
+            if (base64 == null) return null;
+            if (base64.startsWith("Basic ")) base64 = base64.substring(6);
+
+            String key = new String(Base64.getDecoder().decode(base64));
+            if (!key.matches("\\d+:[a-zA-Z0-9]+")) return null;
+            String[] parts = key.split(":");
+            int id = Integer.parseInt(parts[0]);
+            return new SQLAPIKeyManager.APIKeyPair(id, parts[1]);
         }
     }
 
