@@ -134,4 +134,5 @@ public class NetUtilInterval {
     public void setCooldownUntil(long until) {
         this.cooldownUntil = until;
     }
+
 }

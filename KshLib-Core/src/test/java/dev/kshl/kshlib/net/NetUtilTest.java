@@ -10,6 +10,7 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -28,6 +29,14 @@ public class NetUtilTest {
         assertThrows(SSLException.class, () -> NetUtil.get("https://wrong.host.badssl.com/").request());
         assertThrows(SSLException.class, () -> NetUtil.get("https://self-signed.badssl.com/").request());
         assertThrows(SSLException.class, () -> NetUtil.get("https://untrusted-root.badssl.com/").request());
+    }
+
+    @Test
+    public void testHeaders() {
+        NetUtil.Request request = new NetUtil.Request(null, HTTPRequestType.GET, false);
+        request.headers("Hi1");
+        request.appendHeaders("Hi2", "Hi3");
+        assertArrayEquals(new String[]{"Hi1","Hi2","Hi3"}, request.getHeaders());
     }
 
 //    @Test

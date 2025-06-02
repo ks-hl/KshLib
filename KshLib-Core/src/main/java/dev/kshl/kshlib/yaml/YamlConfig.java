@@ -88,7 +88,11 @@ public class YamlConfig {
             if (inputStreamSupplier != null) {
                 //noinspection ResultOfMethodCallIgnored
                 file.toPath().toAbsolutePath().getParent().toFile().mkdirs();
-                Files.copy(inputStreamSupplier.get(), file.toPath());
+                InputStream inputStream = inputStreamSupplier.get();
+                if (inputStream == null) {
+                    throw new NullPointerException("InputStream is null");
+                }
+                Files.copy(inputStream, file.toPath());
             } else {
                 throw new FileNotFoundException();
             }

@@ -1,7 +1,6 @@
 package dev.kshl.kshlib.misc;
 
 import javax.annotation.Nullable;
-
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -73,12 +72,19 @@ public class TimeUtil {
         long hours = time / HOUR_MILLIS % 24;
         long minutes = time / MINUTE_MILLIS % 60;
         long seconds, millis;
-        if (ms) {
-            seconds = time / SECOND_MILLIS % 60;
-            millis = time % SECOND_MILLIS;
-        } else {
-            seconds = Math.round(time / (double) SECOND_MILLIS % 60);
-            millis = 0;
+        seconds = time / SECOND_MILLIS % 60;
+        millis = time % SECOND_MILLIS;
+        if (!ms && millis >= 500) {
+            if (++seconds >= 60) {
+                seconds -= 60;
+                if (++minutes >= 60) {
+                    minutes -= 60;
+                    if (++hours >= 24) {
+                        hours -= 24;
+                        days++;
+                    }
+                }
+            }
         }
         String playtimeMsg = "";
         if (days > 0) {
@@ -93,7 +99,7 @@ public class TimeUtil {
         if (seconds > 0 || (playtimeMsg.isBlank() && !ms)) {
             playtimeMsg += " " + seconds + "s";
         }
-        if (millis > 0 || (playtimeMsg.isBlank() && ms)) {
+        if ((millis > 0 || playtimeMsg.isBlank()) && ms) {
             playtimeMsg += " " + millis + "ms";
         }
         return playtimeMsg.trim();
@@ -166,5 +172,26 @@ public class TimeUtil {
         LocalDateTime localDateTime = LocalDateTime.parse(date, formatter);
         ZonedDateTime zonedDateTime = localDateTime.atZone(zoneId);
         return zonedDateTime.toInstant().toEpochMilli();
+    }
+
+    /**
+     * @return The later of the 2 {@link Instant}s
+     */
+    public static Instant max(Instant a, Instant b) {
+        return a.isAfter(b) ? a : b;
+    }
+
+    /**
+     * @return The earlier of the 2 {@link Instant}s
+     */
+    public static Instant min(Instant a, Instant b) {
+        return a.isBefore(b) ? a : b;
+    }
+
+    /**
+     * @return The number of milliseconds that a is after b. (a.toEpochMillis() - b.toEpochMillis())
+     */
+    public static long minus(Instant a, Instant b) {
+        return a.toEpochMilli() - b.toEpochMilli();
     }
 }

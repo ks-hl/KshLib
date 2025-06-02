@@ -1,8 +1,6 @@
 package dev.kshl.kshlib.misc;
 
 import javax.annotation.Nonnull;
-
-import java.lang.annotation.Retention;
 import java.util.Arrays;
 import java.util.Map.Entry;
 import java.util.function.Predicate;
@@ -29,10 +27,23 @@ public class StackUtil {
     }
 
     public static String format(@Nonnull Throwable t, int lineLimit) {
-        String out = String.format("%s: %s", t.getClass().getName(), t.getMessage());
+        StringBuilder out = new StringBuilder();
+        append(out, t, lineLimit, 0);
+        return out.toString();
+    }
 
-        out += format(t.getStackTrace(), lineLimit);
-        return out;
+    private static void append(StringBuilder builder, Throwable t, int lineLimit, int depth) {
+        builder.append(String.format("%s: %s", t.getClass().getName(), t.getMessage()));
+        builder.append(format(t.getStackTrace(), lineLimit));
+
+        if (t.getCause() != null) {
+            if (depth >= 100) {
+                builder.append("\n...and more causes");
+                return;
+            }
+            builder.append("\nCaused by: ");
+            append(builder, t.getCause(), lineLimit, depth + 1);
+        }
     }
 
     public static String format(@Nonnull StackTraceElement[] stack, int linelimit) {

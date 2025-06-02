@@ -32,6 +32,7 @@ public class TimeUtilTest {
         assertEquals("59s", TimeUtil.millisToString(59_000));
 
         assertEquals("1m", TimeUtil.millisToString(60_000));
+        assertEquals("5m", TimeUtil.millisToString(299_999));
         assertEquals("5m", TimeUtil.millisToString(5 * 60_000));
         assertEquals("5.11m", TimeUtil.millisToString(5.11 * 60_000));
         assertEquals("5.12m", TimeUtil.millisToString(5.119 * 60_000));
@@ -128,6 +129,9 @@ public class TimeUtilTest {
         assertEquals(Integer.MAX_VALUE + "d 12h 30m 45s", millisToStringExtended(Integer.MAX_VALUE * DAY_MILLIS + millis(12, 30, 45)));
         assertEquals("106751991167d 7h 12m 56s", millisToStringExtended(Long.MAX_VALUE, false));
         assertEquals("106751991167d 7h 12m 55s 807ms", millisToStringExtended(Long.MAX_VALUE, true));
+
+        assertEquals("5m", millisToStringExtended(299999));
+        assertEquals("5h", millisToStringExtended(5 * 3600000L - 1));
     }
 
     private static long millis(long seconds) {

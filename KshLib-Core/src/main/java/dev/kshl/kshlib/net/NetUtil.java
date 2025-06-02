@@ -1,5 +1,6 @@
 package dev.kshl.kshlib.net;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -18,6 +19,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Flow;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class NetUtil {
     public static final String CONTENT_TYPE_JSON = "application/json";
@@ -150,10 +153,12 @@ public class NetUtil {
         private String url;
         private final HTTPRequestType requestType;
         private @Nullable String body;
+        private @Nullable byte[] bodyBytes;
         private final boolean followRedirects;
         private String[] headers;
         private Duration timeout;
         private Flow.Subscriber<String> streamSubscriber;
+        private HttpResponse.BodyHandler<?> bodyHandler = HttpResponse.BodyHandlers.ofString();
 
         public Request(String url, HTTPRequestType requestType, @Nullable String body, boolean followRedirects, String... headers) {
             this.url = url;
@@ -189,13 +194,30 @@ public class NetUtil {
             HttpClient.Builder clientBuilder = HttpClient.newBuilder().connectTimeout(timeout);
             if (followRedirects) clientBuilder.followRedirects(HttpClient.Redirect.ALWAYS);
 
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().uri(URI.create(getURL())).setHeader("User-Agent", "KshLib");
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder().uri(URI.create(getURL()));
+
+            boolean hasUserAgent = false;
+            if (getHeaders() != null) {
+                for (int i = 0; i < getHeaders().length; i += 2) {
+                    if (getHeaders()[i].equals("User-Agent")) {
+                        hasUserAgent = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasUserAgent) requestBuilder.setHeader("User-Agent", "KshLib");
 
             if (getHeaders() != null && getHeaders().length > 0) requestBuilder.headers(getHeaders());
 
+            Supplier<HttpRequest.BodyPublisher> publisherSupplier = () -> {
+                if (getBodyBytes() != null) return HttpRequest.BodyPublishers.ofByteArray(getBodyBytes());
+                return HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody());
+            };
+
             switch (getRequestType()) {
-                case POST -> requestBuilder.POST(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
-                case PUT -> requestBuilder.PUT(HttpRequest.BodyPublishers.ofString(getBody() == null ? "" : getBody()));
+                case POST -> requestBuilder.POST(publisherSupplier.get());
+                case PUT -> requestBuilder.PUT(publisherSupplier.get());
                 default -> {
                     if (getBody() != null)
                         throw new IllegalArgumentException("Cannot " + getRequestType() + " with a body");
@@ -205,20 +227,25 @@ public class NetUtil {
             HttpClient client = clientBuilder.build();
             HttpRequest httpRequest = requestBuilder.build();
             HttpResponse<?> httpResponse;
-            String body;
+            String body = null;
+            byte[] bodyBytes = null;
             try {
                 if (streamSubscriber == null) {
-                    httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-                    body = (String) httpResponse.body();
+                    httpResponse = client.send(httpRequest, this.bodyHandler);
+                    Object bodyObj = httpResponse.body();
+                    if (bodyObj instanceof String string) {
+                        body = string;
+                    } else if (bodyObj instanceof byte[] bytes) {
+                        bodyBytes = bytes;
+                    }
                 } else {
                     httpResponse = client.send(httpRequest, HttpResponse.BodyHandlers.fromLineSubscriber(streamSubscriber));
-                    body = null;
                 }
             } catch (InterruptedException e) {
                 throw new IOException("Request interrupted");
             }
 
-            return new Response(httpResponse.headers().map(), httpResponse.statusCode(), body);
+            return new Response(httpResponse.headers().map(), httpResponse.statusCode(), body, bodyBytes);
         }
 
         public void requestCompletable(CompletableFuture<Response> completableFuture) {
@@ -253,6 +280,10 @@ public class NetUtil {
             return body;
         }
 
+        public @Nullable byte[] getBodyBytes() {
+            return bodyBytes;
+        }
+
         public String[] getHeaders() {
             return headers;
         }
@@ -267,13 +298,41 @@ public class NetUtil {
             return this;
         }
 
+        public Request appendHeaders(String... headers) {
+            if (this.headers == null) return headers(headers);
+            String[] oldHeaders = this.headers;
+            this.headers = new String[this.headers.length + headers.length];
+            System.arraycopy(oldHeaders, 0, this.headers, 0, oldHeaders.length);
+            System.arraycopy(headers, 0, this.headers, oldHeaders.length, headers.length);
+
+            return this;
+        }
+
         public Request body(String body) {
+            this.bodyBytes = null;
             this.body = body;
+            return this;
+        }
+
+        public Request bodyBytes(byte[] body) {
+            this.body = null;
+            this.bodyBytes = body;
             return this;
         }
 
         public Request streamSubscriber(Flow.Subscriber<String> streamSubscriber) {
             this.streamSubscriber = streamSubscriber;
+            return this;
+        }
+
+
+        public enum BodyType {STRING, BYTES}
+
+        public Request setResponseBodyType(BodyType bodyType) {
+            this.bodyHandler = switch (bodyType) {
+                case STRING -> HttpResponse.BodyHandlers.ofString();
+                case BYTES -> HttpResponse.BodyHandlers.ofByteArray();
+            };
             return this;
         }
     }
@@ -282,13 +341,15 @@ public class NetUtil {
         private final Map<String, List<String>> headers;
         private final HTTPResponseCode responseCode;
         private final String body;
+        private final byte[] bodyBytes;
         private @Nullable JSONObject json;
         private boolean jsonResolved;
 
-        public Response(Map<String, List<String>> headers, int response_code, String body) {
+        public Response(Map<String, List<String>> headers, int response_code, String body, byte[] bodyBytes) {
             this.headers = headers;
             this.responseCode = HTTPResponseCode.getByCode(response_code);
             this.body = body;
+            this.bodyBytes = bodyBytes;
         }
 
         public Map<String, List<String>> headers() {
@@ -325,6 +386,47 @@ public class NetUtil {
 
         public String getBody() {
             return body;
+        }
+
+        public byte[] getBodyBytes() {
+            return bodyBytes;
+        }
+
+        @Override
+        public String toString() {
+            return toString(0);
+        }
+
+        public String toString(int indent) {
+            StringBuilder out = new StringBuilder();
+            out.append("Response Code: ").append(getResponseCode()).append("\n");
+            out.append("Headers: \n");
+            for (Map.Entry<String, List<String>> entry : headers().entrySet()) {
+                out.append(entry.getKey()).append(": ");
+                for (String value : entry.getValue()) {
+                    out.append(value).append(", ");
+                }
+                out.append("\n");
+            }
+            String body = getBody();
+            if (indent > 0) {
+                try {
+                    body = new JSONObject(body).toString(indent);
+                } catch (JSONException ignored) {
+                    try {
+                        body = new JSONArray(body).toString(indent);
+                    } catch (JSONException ignored2) {
+                    }
+                }
+            }
+            if (bodyBytes != null) {
+                out.append("Body Bytes Hex (").append(getBodyBytes().length).append("): ").append(HexFormat.of().formatHex(getBodyBytes())).append("\n");
+            }
+            if (getBody() != null) {
+                out.append("Body Hex (").append(getBody().getBytes().length).append("): ").append(HexFormat.of().formatHex(body.getBytes())).append("\n");
+            }
+            out.append("Body: ").append(body);
+            return out.toString();
         }
     }
 }
