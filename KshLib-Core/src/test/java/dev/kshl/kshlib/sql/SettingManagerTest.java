@@ -76,6 +76,6 @@ public class SettingManagerTest {
 
         settingManager.set(1, true);
         settingManager.set(1, true);
-        assertTrue(settingManager.toggle(1));
+        assertTrue(settingManager.get(1));
     }
 }
