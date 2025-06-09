@@ -1,19 +1,14 @@
 package dev.kshl.kshlib.velocity;
 
 import com.velocitypowered.api.command.CommandMeta;
-import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
-import com.velocitypowered.api.proxy.ConsoleCommandSource;
-import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
-import dev.kshl.kshlib.misc.UUIDHelper;
 import dev.kshl.kshlib.yaml.YamlConfig;
 import org.slf4j.Logger;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.UUID;
 
 public class BaseVelocityPlugin implements IBaseVelocityPlugin {
 
@@ -70,24 +65,6 @@ public class BaseVelocityPlugin implements IBaseVelocityPlugin {
 
     public YamlConfig getConfig() {
         return config;
-    }
-
-    public static String getUsername(CommandSource commandSource) {
-        if (commandSource instanceof Player player) {
-            return player.getUsername();
-        } else if (commandSource instanceof ConsoleCommandSource) {
-            return "CONSOLE";
-        }
-        throw new IllegalArgumentException();
-    }
-
-    public static UUID getUUID(CommandSource commandSource) {
-        if (commandSource instanceof Player player) {
-            return player.getUniqueId();
-        } else if (commandSource instanceof ConsoleCommandSource) {
-            return UUIDHelper.ZERO;
-        }
-        throw new IllegalArgumentException();
     }
 
     protected CommandMeta getMeta(String command, String... aliases) {

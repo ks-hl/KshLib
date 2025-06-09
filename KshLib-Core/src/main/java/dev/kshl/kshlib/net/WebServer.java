@@ -139,8 +139,13 @@ public abstract class WebServer implements Runnable, HttpHandler {
                     final String queryString = t.getRequestURI().getQuery();
                     msg = sender + " " + t.getRequestMethod() + " " + endpoint + (queryString != null ? "?" + queryString : "") + " - %d";
 
-                    boolean global = globalRateLimiter.doRateLimit(sender, endpoint);
-                    boolean specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> new RateLimiter(endpoint_, getRateLimitParameters(endpoint_))).doRateLimit(sender, endpoint);
+                    boolean global, specific;
+                    synchronized (globalRateLimiter) {
+                        global = globalRateLimiter.doRateLimit(sender, endpoint);
+                    }
+                    synchronized (endpointSpecificRateLimiter) {
+                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> new RateLimiter(endpoint_, getRateLimitParameters(endpoint_))).doRateLimit(sender, endpoint);
+                    }
                     if (global || specific) {
                         throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
                     }

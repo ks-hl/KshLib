@@ -7,7 +7,6 @@ import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
@@ -126,7 +125,9 @@ public class ComponentHelper {
     }
 
     public static String replaceLegacyWithMini(String legacy) {
-        Component component = ComponentHelper.legacy(legacy);
-        return MiniMessage.miniMessage().serialize(component);
+        for (NamedTextColorChar namedTextColorChar : NamedTextColorChar.values()) {
+            legacy = legacy.replace("&" + namedTextColorChar.getChar(), "<" + namedTextColorChar.toString().toLowerCase() + ">");
+        }
+        return legacy;
     }
 }

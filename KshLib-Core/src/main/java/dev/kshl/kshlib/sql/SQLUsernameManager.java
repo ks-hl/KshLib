@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 public class SQLUsernameManager implements ISQLManager {
 
@@ -92,5 +93,13 @@ public class SQLUsernameManager implements ISQLManager {
         cache(uidName.map(Pair::getKey).orElse(null), uidName.map(Pair::getValue).orElse(username));
 
         return uidName.map(Pair::getKey);
+    }
+
+    public Optional<UUID> getUUID(String username, SQLIDManager.UUIDText sqlIDManager) throws SQLException, BusyException {
+        return sqlIDManager.getValueOpt(getUID(username).orElse(-1));
+    }
+
+    public Optional<String> getUsername(UUID uuid, SQLIDManager.UUIDText sqlIDManager) throws SQLException, BusyException {
+        return getUsername(sqlIDManager.getIDOpt(uuid, false).orElse(-1));
     }
 }

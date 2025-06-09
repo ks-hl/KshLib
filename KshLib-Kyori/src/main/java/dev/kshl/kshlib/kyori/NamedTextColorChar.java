@@ -6,7 +6,7 @@ import javax.annotation.Nullable;
 
 import java.util.Arrays;
 
-public enum NamedTextColorChars {
+public enum NamedTextColorChar {
     BLACK('0', NamedTextColor.BLACK, null),
     DARK_BLUE('1', NamedTextColor.DARK_BLUE, null),
     DARK_GREEN('2', NamedTextColor.DARK_GREEN, null),
@@ -38,13 +38,13 @@ public enum NamedTextColorChars {
     private final NamedTextColor color;
     private final TextDecoration decoration;
 
-    NamedTextColorChars(char c, NamedTextColor color, TextDecoration decoration) {
+    NamedTextColorChar(char c, NamedTextColor color, TextDecoration decoration) {
         this.c = c;
         this.color = color;
         this.decoration = decoration;
     }
 
-    public static NamedTextColorChars getByChar(char c) {
+    public static NamedTextColorChar getByChar(char c) {
         return Arrays.stream(values()).filter(color -> color.c == c).findAny().orElse(null);
     }
 

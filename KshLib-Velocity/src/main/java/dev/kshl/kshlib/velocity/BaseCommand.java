@@ -43,17 +43,21 @@ public abstract class BaseCommand implements SimpleCommand, Executable {
             return List.of();
         }
 
-        List<String> output = tabComplete(invocation.source(), invocation.arguments(), invocation.alias());
+        String[] args = invocation.arguments();
+        if (args.length == 0) args = new String[]{""};
+
+        List<String> output = tabComplete(invocation.source(), args, invocation.alias());
         if (output == null) {
-            output = tabCompleteStartsWith(invocation.source(), invocation.arguments(), invocation.alias());
+            output = tabCompleteStartsWith(invocation.source(), args, invocation.alias());
             if (output != null && output.size() < 1000) {
                 output = new ArrayList<>(output);
             }
             if (output != null) {
-                String token = invocation.arguments().length == 0 ? "" : invocation.arguments()[invocation.arguments().length - 1].toLowerCase();
+                String token = args[args.length - 1].toLowerCase();
                 output.removeIf(word -> !word.toLowerCase().startsWith(token));
             }
         }
+        if (output == null) output = List.of();
 
         return output;
     }
