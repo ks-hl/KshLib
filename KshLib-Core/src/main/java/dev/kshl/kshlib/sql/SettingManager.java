@@ -103,6 +103,10 @@ public abstract class SettingManager<T> {
         return table;
     }
 
+    public T getDefault() {
+        return def;
+    }
+
     public abstract void setFromString(int uid, int setting, String value) throws SQLException, BusyException, IllegalArgumentException;
 
     public abstract void setFromObject(int uid, int setting, Object value) throws SQLException, BusyException, ClassCastException, ArgumentValidationException;
@@ -145,7 +149,7 @@ public abstract class SettingManager<T> {
 
     public static class Bool extends SettingManager<Boolean> {
         public Bool(ConnectionManager sql, String table, boolean multiple, Boolean def) {
-            super(sql, table, def, "BOOLEAN", rs -> rs.getBoolean(1), multiple);
+            super(sql, table, Objects.requireNonNull(def, "def must be true/false"), "BOOLEAN", rs -> rs.getBoolean(1), multiple);
         }
 
         @Override
@@ -160,6 +164,19 @@ public abstract class SettingManager<T> {
             else {
                 throw new ClassCastException("Value is wrong type. " + value + (value == null ? "" : (", " + value.getClass().getName())));
             }
+        }
+
+        public boolean toggle(int uid) throws SQLException, BusyException {
+            return toggle(uid, 0);
+        }
+
+        public boolean toggle(int uid, int setting) throws SQLException, BusyException {
+            // TODO do this in 1 statement possible?
+            return sql.executeTransaction(connection -> {
+                boolean state = !get(uid, setting);
+                set(uid, setting, state);
+                return state;
+            }, 3000L);
         }
 
         @Override

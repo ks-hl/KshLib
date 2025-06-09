@@ -6,8 +6,10 @@ import dev.kshl.kshlib.exceptions.BusyException;
 import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SettingManagerTest {
     @DatabaseTest
@@ -61,5 +63,19 @@ public class SettingManagerTest {
         assertEquals(1, settingManager.get(2, 1));
 
         assertThrows(IllegalArgumentException.class, () -> settingManager.set(1, 0, 0));
+    }
+
+    @DatabaseTest
+    public void testSQLSettingsBoolean(ConnectionManager connectionManager) throws SQLException, BusyException {
+        SettingManager.Bool settingManager = new SettingManager.Bool(connectionManager, "setting_manager_int", false, false);
+        connectionManager.execute(settingManager::init, 3000L);
+
+        assertFalse(settingManager.get(1));
+        assertTrue(settingManager.toggle(1));
+        assertFalse(settingManager.toggle(1));
+
+        settingManager.set(1, true);
+        settingManager.set(1, true);
+        assertTrue(settingManager.toggle(1));
     }
 }
