@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import dev.kshl.kshlib.misc.StackUtil;
 import dev.kshl.kshlib.misc.Timer;
+import dev.kshl.kshlib.sql.SQLAPIKeyManager;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -23,6 +24,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -31,7 +33,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -45,7 +46,6 @@ public abstract class WebServer implements Runnable, HttpHandler {
     private final boolean requireJSONInput;
     private boolean closed;
     private HttpServer server;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
     private final List<Object> endpoints = new ArrayList<>() {{
         add(WebServer.this);
     }};
@@ -77,10 +77,19 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     @Override
+    @Deprecated
     public void run() {
+        start();
+    }
+
+    public void start() {
+        start(new InetSocketAddress(port));
+    }
+
+    public void start(InetSocketAddress inetSocketAddress) {
         info("Starting web server on port " + port + "...");
         try {
-            server = HttpServer.create(new InetSocketAddress(port), 0);
+            server = HttpServer.create(inetSocketAddress, 0);
 
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -89,7 +98,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
         info("Web server running on port " + port);
         server.createContext("/", this);
 
-        server.setExecutor(null);
+        server.setExecutor(Executors.newCachedThreadPool());
         server.start();
     }
 
@@ -122,22 +131,22 @@ public abstract class WebServer implements Runnable, HttpHandler {
     @Override
     public final void handle(HttpExchange t) {
         final long requestTime = System.currentTimeMillis();
-        executor.submit(() -> {
-            Timer timer = new Timer(1);
-            String sender = null;
-            String endpoint = null;
-            try {
-                String requestString;
-                Response response = null;
-                Request request = null;
-                String msg = null;
 
-                try {
-                    sender = parseXForwardedFor(t.getRemoteAddress().getAddress().toString(), t.getRequestHeaders());
-                    if (sender.startsWith("/")) sender = sender.substring(1);
-                    endpoint = Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/");
-                    final String queryString = t.getRequestURI().getQuery();
-                    msg = sender + " " + t.getRequestMethod() + " " + endpoint + (queryString != null ? "?" + queryString : "") + " - %d";
+        Timer timer = new Timer(1);
+        String sender = null;
+        String endpoint = null;
+        try {
+            String requestString;
+            Response response;
+            Request request = null;
+            String msg = null;
+
+            try {
+                sender = parseXForwardedFor(t.getRemoteAddress().getAddress().toString(), t.getRequestHeaders());
+                if (sender.startsWith("/")) sender = sender.substring(1);
+                endpoint = Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/");
+                final String queryString = t.getRequestURI().getQuery();
+                msg = sender + " " + t.getRequestMethod() + " " + endpoint + (queryString != null ? "?" + queryString : "") + " - %d";
 
                     boolean global, specific;
                     synchronized (globalRateLimiter) {
@@ -150,111 +159,110 @@ public abstract class WebServer implements Runnable, HttpHandler {
                         throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
                     }
 
-                    requestString = new String(t.getRequestBody().readAllBytes());
-                    if (requestString.isEmpty()) requestString = "{}";
+                requestString = new String(t.getRequestBody().readAllBytes());
+                if (requestString.isEmpty()) requestString = "{}";
 
-                    var query = parseQuery(t.getRequestURI().getQuery());
+                var query = parseQuery(t.getRequestURI().getQuery());
 
-                    if (requestString.length() > maxRequestLength) {
-                        throw new WebException(HTTPResponseCode.PAYLOAD_TOO_LARGE);
-                    } else {
-                        JSONObject jsonIn = null;
-                        try {
-                            jsonIn = new JSONObject(requestString);
-                        } catch (JSONException e) {
-                            if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
-                        }
-                        request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
-
-                        response = handleEndpoints(request);
-                        if (response == null) response = handle(request);
-                        if (response == null) {
-                            if (endpoint.equalsIgnoreCase("/favicon.ico")) {
-                                response = new Response().code(HTTPResponseCode.NOT_FOUND); // 404 gracefully because favicon.ico is expected to be requested frequently during testing
-                            } else {
-                                throw new WebException(HTTPResponseCode.NOT_FOUND);
-                            }
-                        }
-                    }
-                } catch (WebException e) {
-                    response = new Response().code(e.responseCode).body(new JSONObject().put("error", e.userErrorMessage));
-                    msg += " - " + e.getMessage();
-                } catch (Throwable e) {
-                    response = new Response().code(HTTPResponseCode.INTERNAL_SERVER_ERROR).body(new JSONObject().put("error", "An unknown error occurred"));
-                    msg += " - " + e.getMessage() + ": " + StackUtil.format(e, 0);
-                }
-                msg = String.format(msg, response.code) + ", took " + timer;
-                logRequest(request, response, msg);
-
-                if (response.eventStream == null && response.isJSON)
-                    t.getResponseHeaders().add("Content-Type", "application/json");
-
-                if (response.headers != null) {
-                    for (Map.Entry<String, String> entry : response.headers.entrySet()) {
-                        t.getResponseHeaders().add(entry.getKey(), entry.getValue());
-                    }
-                }
-                if (!origins.isEmpty() && request != null) {
-                    var originList = request.headers().get("Origin");
-                    if (originList != null && !originList.isEmpty()) {
-                        String origin = originList.get(0);
-                        if (origins.contains(origin)) {
-                            t.getResponseHeaders().add("Access-Control-Allow-Origin", origin);
-                            t.getResponseHeaders().add("Access-Control-Allow-Credentials", "true");
-                        }
-                    }
-                }
-
-                if (response.eventStream != null) {
-                    t.getResponseHeaders().add("Content-Type", "text/event-stream");
-                    t.getResponseHeaders().add("Cache-Control", "no-cache");
-                    t.getResponseHeaders().add("Connection", "keep-alive");
-
-                    t.sendResponseHeaders(response.code, 0);
-
-                    AtomicReference<String> endCause = new AtomicReference<>();
-                    try (OutputStream os = t.getResponseBody()) {
-                        while (true) {
-                            EventStream.Event event = response.eventStream.poll();
-                            String body = event.format();
-                            if (body != null) {
-                                os.write(body.getBytes());
-                                os.flush();
-                            }
-                            if (event.close()) {
-                                endCause.set("Server aborted");
-                                break;
-                            }
-                            try {
-                                //noinspection BusyWait
-                                Thread.sleep(response.frequency);
-                            } catch (InterruptedException e) {
-                                endCause.set("Thread interrupted");
-                                return;
-                            }
-                        }
-                    } catch (Throwable e) {
-                        if (e instanceof IOException && e.getMessage() != null && e.getMessage().contains(" aborted ")) {
-                            endCause.set("Client aborted");
-                        } else {
-                            endCause.set("Error: " + e.getClass().getName() + (e.getMessage() == null ? "" : (" - " + e.getMessage())));
-                        }
-                    } finally {
-                        logRequest(request, response, "Stream ended @ " + endpoint + ", cause: " + endCause.get());
-                    }
+                if (requestString.length() > maxRequestLength) {
+                    throw new WebException(HTTPResponseCode.PAYLOAD_TOO_LARGE);
                 } else {
+                    JSONObject jsonIn = null;
+                    try {
+                        jsonIn = new JSONObject(requestString);
+                    } catch (JSONException e) {
+                        if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
+                    }
+                    request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
 
-                    byte[] out = response.body == null ? new byte[0] : response.body.getBytes();
-                    t.sendResponseHeaders(response.code, out.length);
-                    try (OutputStream os = t.getResponseBody()) {
-                        if (out.length > 0) os.write(out);
-                        else os.write(new byte[]{0});
+                    response = handleEndpoints(request);
+                    if (response == null) response = handle(request);
+                    if (response == null) {
+                        if (endpoint.equalsIgnoreCase("/favicon.ico")) {
+                            response = new Response().code(HTTPResponseCode.NOT_FOUND); // 404 gracefully because favicon.ico is expected to be requested frequently during testing
+                        } else {
+                            throw new WebException(HTTPResponseCode.NOT_FOUND);
+                        }
                     }
                 }
-            } catch (IOException e) {
-                print("An error occurred while handling request from " + sender + " to " + endpoint, e);
+            } catch (WebException e) {
+                response = new Response().code(e.responseCode).body(new JSONObject().put("error", e.userErrorMessage));
+                msg += " - " + e.getMessage();
+            } catch (Throwable e) {
+                response = new Response().code(HTTPResponseCode.INTERNAL_SERVER_ERROR).body(new JSONObject().put("error", "An unknown error occurred"));
+                msg += " - " + e.getMessage() + ": " + StackUtil.format(e, 0);
             }
-        });
+            msg = String.format(msg, response.code) + ", took " + timer;
+            logRequest(request, response, msg);
+
+            if (response.eventStream == null && response.isJSON)
+                t.getResponseHeaders().add("Content-Type", "application/json");
+
+            if (response.headers != null) {
+                for (Map.Entry<String, String> entry : response.headers.entrySet()) {
+                    t.getResponseHeaders().add(entry.getKey(), entry.getValue());
+                }
+            }
+            if (!origins.isEmpty() && request != null) {
+                var originList = request.headers().get("Origin");
+                if (originList != null && !originList.isEmpty()) {
+                    String origin = originList.get(0);
+                    if (origins.contains(origin)) {
+                        t.getResponseHeaders().add("Access-Control-Allow-Origin", origin);
+                        t.getResponseHeaders().add("Access-Control-Allow-Credentials", "true");
+                    }
+                }
+            }
+
+            if (response.eventStream != null) {
+                t.getResponseHeaders().add("Content-Type", "text/event-stream");
+                t.getResponseHeaders().add("Cache-Control", "no-cache");
+                t.getResponseHeaders().add("Connection", "keep-alive");
+
+                t.sendResponseHeaders(response.code, 0);
+
+                AtomicReference<String> endCause = new AtomicReference<>();
+                try (OutputStream os = t.getResponseBody()) {
+                    while (true) {
+                        EventStream.Event event = response.eventStream.poll();
+                        String body = event.format();
+                        if (body != null) {
+                            os.write(body.getBytes());
+                            os.flush();
+                        }
+                        if (event.close()) {
+                            endCause.set("Server aborted");
+                            break;
+                        }
+                        try {
+                            //noinspection BusyWait
+                            Thread.sleep(response.frequency);
+                        } catch (InterruptedException e) {
+                            endCause.set("Thread interrupted");
+                            return;
+                        }
+                    }
+                } catch (Throwable e) {
+                    if (e instanceof IOException && e.getMessage() != null && e.getMessage().contains(" aborted ")) {
+                        endCause.set("Client aborted");
+                    } else {
+                        endCause.set("Error: " + e.getClass().getName() + (e.getMessage() == null ? "" : (" - " + e.getMessage())));
+                    }
+                } finally {
+                    logRequest(request, response, "Stream ended @ " + endpoint + ", cause: " + endCause.get());
+                }
+            } else {
+
+                byte[] out = response.body == null ? new byte[0] : response.body.getBytes();
+                t.sendResponseHeaders(response.code, out.length);
+                try (OutputStream os = t.getResponseBody()) {
+                    if (out.length > 0) os.write(out);
+                    else os.write(new byte[]{0});
+                }
+            }
+        } catch (Throwable e) {
+            print("An error occurred while handling request from " + sender + " to " + endpoint, e);
+        }
     }
 
     private Response handleEndpoints(Request request) throws Throwable {
@@ -343,6 +351,19 @@ public abstract class WebServer implements Runnable, HttpHandler {
         @Nonnull
         public JSONObject bodyJSONOrEmpty() {
             return bodyJSON() == null ? new JSONObject() : bodyJSON();
+        }
+
+        @Nullable
+        public SQLAPIKeyManager.APIKeyPair getAPIKey() {
+            String base64 = headers().getFirst("Authorization");
+            if (base64 == null) return null;
+            if (base64.startsWith("Basic ")) base64 = base64.substring(6);
+
+            String key = new String(Base64.getDecoder().decode(base64));
+            if (!key.matches("\\d+:[a-zA-Z0-9]+")) return null;
+            String[] parts = key.split(":");
+            int id = Integer.parseInt(parts[0]);
+            return new SQLAPIKeyManager.APIKeyPair(id, parts[1]);
         }
     }
 

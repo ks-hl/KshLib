@@ -7,6 +7,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -54,6 +55,10 @@ public class SQLAPIKeyManager {
         return passwordManager.testPassword(id, secret);
     }
 
+    public boolean test(APIKeyPair apiKeyPair) throws SQLException, BusyException {
+        return test(apiKeyPair.id(), apiKeyPair.secret());
+    }
+
     public boolean contains(int id) throws SQLException, BusyException {
         return passwordManager.contains(id);
     }
@@ -70,7 +75,18 @@ public class SQLAPIKeyManager {
         connectionManager.execute("UPDATE " + table + " SET description=? WHERE uid=?", 3000, description, id);
     }
 
+    public void revoke(int id) throws SQLException, BusyException {
+        passwordManager.remove(id);
+    }
+
     public record APIKeyPair(int id, String secret) {
+        public String combined() {
+            return id() + ":" + secret();
+        }
+
+        public String base64() {
+            return Base64.getEncoder().encodeToString(combined().getBytes());
+        }
     }
 
     public String getTableName() {
