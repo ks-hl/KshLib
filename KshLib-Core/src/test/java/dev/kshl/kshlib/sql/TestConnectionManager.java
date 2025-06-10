@@ -26,6 +26,17 @@ class TestConnectionManager extends ConnectionManager {
 
     @Override
     protected void init(Connection connection) throws SQLException {
+        if (isMySQL()) {
+            query(connection, """
+                    SELECT concat('DROP TABLE IF EXISTS `', table_name, '`;')
+                    FROM information_schema.tables
+                    WHERE table_schema = 'test';""", rs -> {
+                while (rs.next()) {
+                    execute(connection, rs.getString(1));
+                }
+            });
+        }
+
         execute(connection, "DROP TABLE IF EXISTS test_table");
         execute(connection, "CREATE TABLE IF NOT EXISTS test_table (uid INT, time BIGINT)");
     }

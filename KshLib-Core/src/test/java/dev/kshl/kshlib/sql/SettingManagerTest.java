@@ -77,5 +77,13 @@ public class SettingManagerTest {
         settingManager.set(1, true);
         settingManager.set(1, true);
         assertTrue(settingManager.get(1));
+
+        SettingManager.Bool settingManagerTrueDef = new SettingManager.Bool(connectionManager, "setting_manager_int", false, true);
+        connectionManager.execute(settingManagerTrueDef::init, 3000L);
+
+        assertTrue(settingManagerTrueDef.get(1));
+        assertFalse(settingManagerTrueDef.toggle(1));
+        assertTrue(settingManagerTrueDef.get(2));
+        assertTrue(settingManagerTrueDef.toggle(1));
     }
 }
