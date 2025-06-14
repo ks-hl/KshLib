@@ -4,10 +4,12 @@ import dev.kshl.kshlib.concurrent.ConcurrentReference;
 import dev.kshl.kshlib.exceptions.BusyException;
 
 import javax.annotation.Nonnull;
+import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.UnaryOperator;
 
 public class NetUtilInterval {
     private final String endpoint;
@@ -135,4 +137,26 @@ public class NetUtilInterval {
         this.cooldownUntil = until;
     }
 
+    /**
+     * Downloads a file from a URL
+     *
+     * @param endpointSuffix    HTTP URL of the file to be downloaded
+     * @param downloadDirectory path of the directory to save the file
+     * @param fileNameResolver  A function which maps the filename resolved from the URL and request to the desired name.
+     */
+    @SuppressWarnings("unused")
+    public File downloadFile(String endpointSuffix, File downloadDirectory, UnaryOperator<String> fileNameResolver) throws IOException {
+        return downloadFile(endpointSuffix, downloadDirectory, fileNameResolver, false);
+    }
+
+    /**
+     * Downloads a file from a URL
+     *
+     * @param endpointSuffix    HTTP URL of the file to be downloaded
+     * @param downloadDirectory path of the directory to save the file
+     */
+    public File downloadFile(String endpointSuffix, File downloadDirectory, UnaryOperator<String> fileNameResolver, boolean followRedirects) throws IOException {
+        String url = adaptSuffixAndRateLimit(endpointSuffix);
+        return NetUtil.downloadFile(url, downloadDirectory, fileNameResolver, followRedirects);
+    }
 }

@@ -27,8 +27,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Flow;
-import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 public class NetUtil {
     public static final String CONTENT_TYPE_JSON = "application/json";
@@ -43,8 +43,8 @@ public class NetUtil {
      * @param fileNameResolver  A function which maps the filename resolved from the URL and request to the desired name.
      */
     @SuppressWarnings("unused")
-    public static File downloadFile(String url, File downloadDirectory, Function<String, String> fileNameResolver) throws IOException {
-        return downloadFile(url, downloadDirectory, fileNameResolver, 0);
+    public static File downloadFile(String url, File downloadDirectory, UnaryOperator<String> fileNameResolver) throws IOException {
+        return downloadFile(url, downloadDirectory, fileNameResolver, false);
     }
 
     /**
@@ -53,19 +53,16 @@ public class NetUtil {
      * @param url               HTTP URL of the file to be downloaded
      * @param downloadDirectory path of the directory to save the file
      */
-    public static File downloadFile(String url, File downloadDirectory, Function<String, String> fileNameResolver, int loops) throws IOException {
+    public static File downloadFile(String url, File downloadDirectory, UnaryOperator<String> fileNameResolver, boolean followRedirects) throws IOException {
         HttpURLConnection httpConn = (HttpURLConnection) new URL(url).openConnection();
         httpConn.addRequestProperty("User-Agent", "KSHLib");
-        int statusCode = 0;
+        httpConn.setInstanceFollowRedirects(followRedirects);
+        int statusCode;
         httpConn.connect();
         try {
             statusCode = httpConn.getResponseCode();
 
             if (statusCode < 300) {
-                String location = httpConn.getHeaderField("location");
-                if (location != null && loops < 10) {
-                    return downloadFile(location, downloadDirectory, fileNameResolver, loops + 1);
-                }
                 String fileName = null;
                 String disposition = httpConn.getHeaderField("Content-Disposition");
 

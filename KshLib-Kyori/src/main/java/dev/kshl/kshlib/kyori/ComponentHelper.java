@@ -2,22 +2,32 @@ package dev.kshl.kshlib.kyori;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.TextReplacementConfig;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
+import net.kyori.adventure.text.minimessage.tag.standard.StandardTags;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 import java.awt.*;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY;
 import static net.kyori.adventure.text.format.NamedTextColor.WHITE;
 
 public class ComponentHelper {
+    private static final Pattern HEX_PATTERN = Pattern.compile("&(#[a-fA-F0-9]{6})");
+    private static final Pattern COLOR_PATTERN = Pattern.compile("&(([a-fA-F0-9])|(#[a-fA-F0-9]{6}))");
+    private static final Pattern FORMAT_PATTERN = Pattern.compile("&([mnlok])");
 
     @Deprecated
     public static Component text(Object text) {
@@ -125,9 +135,138 @@ public class ComponentHelper {
     }
 
     public static String replaceLegacyWithMini(String legacy) {
-        for (NamedTextColorChar namedTextColorChar : NamedTextColorChar.values()) {
-            legacy = legacy.replace("&" + namedTextColorChar.getChar(), "<" + namedTextColorChar.toString().toLowerCase() + ">");
+        legacy = legacy.replace("§", "&");
+        Matcher matcher = COLOR_PATTERN.matcher(legacy);
+        StringBuilder text = new StringBuilder();
+        int last = 0;
+        while (matcher.find()) {
+            text.append(parseLegacyFormat(legacy.substring(last, matcher.start())));
+            String match = matcher.group(1);
+            if (match.length() == 1) {
+                text.append("<").append(NamedTextColorChar.getByChar(match.charAt(0)).toString().toLowerCase()).append(">");
+            } else {
+                text.append("<").append(match).append(">");
+            }
+            last = matcher.end();
         }
-        return legacy;
+        if (last < legacy.length()) {
+            text.append(parseLegacyFormat(legacy.substring(last)));
+        }
+        matcher = HEX_PATTERN.matcher(text);
+        return matcher.replaceAll(match -> "<" + match.group(1) + ">");
+    }
+
+    private static String parseLegacyFormat(String string) {
+        StringBuilder end = new StringBuilder();
+
+        Matcher matcher = FORMAT_PATTERN.matcher(string);
+        while (matcher.find()) {
+            NamedTextColorChar format = NamedTextColorChar.getByChar(matcher.group(1).charAt(0));
+            end.insert(0, "</" + format.toString().toLowerCase() + ">");
+        }
+        matcher = FORMAT_PATTERN.matcher(string);
+        string = matcher.replaceAll(match -> "<" + NamedTextColorChar.getByChar(match.group(1).charAt(0)).toString().toLowerCase() + ">");
+
+        return string + end;
+    }
+
+    public static Component parseMiniMessage(String message, boolean allowHex, boolean allowColors, boolean allowBasicFormatting, boolean allowObfuscation, boolean allowClickEvent, boolean allowHoverEvent, boolean allowRainbow) {
+        message = ComponentHelper.replaceLegacyWithMini(message);
+        var tagBuilder = TagResolver.builder();
+        if (!allowHex && allowColors) {
+            message = message.replaceAll("</?(c(olou?r)?:)?#[a-fA-F0-9]{1,10}>", "");
+        }
+        if (allowColors || allowHex) {
+            tagBuilder.resolver(StandardTags.color());
+        }
+        if (allowBasicFormatting) {
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.BOLD));
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.ITALIC));
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.UNDERLINED));
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.STRIKETHROUGH));
+        }
+        if (allowObfuscation) {
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.OBFUSCATED));
+        }
+        if (allowClickEvent) {
+            tagBuilder.resolver(StandardTags.clickEvent());
+        }
+        if (allowHoverEvent) {
+            tagBuilder.resolver(StandardTags.hoverEvent());
+        }
+        if (allowRainbow) {
+            tagBuilder.resolver(StandardTags.rainbow());
+        }
+        tagBuilder.resolver(StandardTags.reset());
+        return MiniMessage.builder().tags(tagBuilder.build()).build().deserialize(message);
+    }
+
+    public static String stripMiniMessage(String message, boolean stripHex, boolean stripColors, boolean stripBasicFormatting, boolean stripObfuscation, boolean stripClickEvent, boolean stripHoverEvent, boolean stripRainbow) {
+        message = ComponentHelper.replaceLegacyWithMini(message);
+        var tagBuilder = TagResolver.builder();
+        if (stripHex || stripColors) {
+            message = message.replaceAll("</?(c(olou?r)?:)?#[a-fA-F0-9]{1,10}>", "");
+        }
+        if (stripColors) {
+            tagBuilder.resolver(StandardTags.color());
+        }
+        if (stripBasicFormatting) {
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.BOLD));
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.ITALIC));
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.UNDERLINED));
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.STRIKETHROUGH));
+        }
+        if (stripObfuscation) {
+            tagBuilder.resolver(StandardTags.decorations(TextDecoration.OBFUSCATED));
+        }
+        if (stripClickEvent) {
+            tagBuilder.resolver(StandardTags.clickEvent());
+        }
+        if (stripHoverEvent) {
+            tagBuilder.resolver(StandardTags.hoverEvent());
+        }
+        if (stripRainbow) {
+            tagBuilder.resolver(StandardTags.rainbow());
+        }
+        return MiniMessage.builder().tags(tagBuilder.build()).build().stripTags(message);
+    }
+
+    public static TextColor parseColor(String arg) throws IllegalArgumentException {
+        arg = arg.replace("§", "&");
+        if (arg.startsWith("&")) arg = arg.substring(1);
+        if (arg.length() == 1) {
+            return NamedTextColorChar.getByChar(arg.charAt(0)).getColor();
+        }
+        if (arg.startsWith("<") && arg.endsWith(">")) arg = arg.substring(1, arg.length() - 1);
+        if (arg.startsWith("#")) {
+            return Optional.ofNullable(TextColor.fromHexString(arg)).orElse(WHITE);
+        }
+        return Optional.ofNullable(NamedTextColorChar.getByName(arg)).map(NamedTextColorChar::getColor).orElse(WHITE);
+    }
+
+    public static TextColor[] parseColors(String[] args) throws IllegalArgumentException {
+        TextColor[] out = new TextColor[args.length];
+        for (int i = 0; i < args.length; i++) out[i] = parseColor(args[i]);
+        return out;
+    }
+
+    public static final Pattern URL_PATTERN_HTTP_HTTPS = Pattern.compile("https?://(www\\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\\.[a-zA-Z0-9()]{2,6}\\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)");
+    public static final Pattern URL_PATTERN_NO_HTTP = Pattern.compile("[-a-zA-Z0-9@:%._+~#=]{1,256}\\.(com?|net|org|us|xyz|uk|ca|cc)\\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)");
+    public static final Pattern URL_PATTERN = Pattern.compile(URL_PATTERN_HTTP_HTTPS.pattern() + "|" + URL_PATTERN_NO_HTTP);
+
+    public static Component replaceURLs(Component component, boolean requireHttpHttps) {
+        return component.replaceText(TextReplacementConfig.builder()
+                .match(requireHttpHttps ? URL_PATTERN_HTTP_HTTPS : URL_PATTERN)
+                .replacement((match, builder) -> {
+                    String url = match.group();
+                    String urlLower = url.toLowerCase();
+                    if (!urlLower.startsWith("http://") && !urlLower.startsWith("https://")) {
+                        url = "https://" + url;
+                    }
+                    return Component.text(match.group()).decorate(TextDecoration.UNDERLINED)
+                            .hoverEvent(HoverEvent.showText(Component.text("Click to open link\n" + url, NamedTextColor.GRAY)))
+                            .clickEvent(ClickEvent.openUrl(url));
+                })
+                .build());
     }
 }

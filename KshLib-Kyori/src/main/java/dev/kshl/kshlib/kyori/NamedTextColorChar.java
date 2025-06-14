@@ -2,8 +2,8 @@ package dev.kshl.kshlib.kyori;
 
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import javax.annotation.Nullable;
 
+import javax.annotation.Nullable;
 import java.util.Arrays;
 
 public enum NamedTextColorChar {
@@ -48,6 +48,13 @@ public enum NamedTextColorChar {
         return Arrays.stream(values()).filter(color -> color.c == c).findAny().orElse(null);
     }
 
+    @Nullable
+    public static NamedTextColorChar getByName(String name) {
+        if (name.startsWith("<") && name.endsWith(">")) name = name.substring(1, name.length() - 1);
+        String finalName = name;
+        return Arrays.stream(values()).filter(color -> color.name().equalsIgnoreCase(finalName)).findAny().orElse(null);
+    }
+
     public boolean isColor() {
         return c >= 'a' && c <= 'f' || c >= '0' && c <= '9';
     }
@@ -67,4 +74,5 @@ public enum NamedTextColorChar {
     public @Nullable TextDecoration getDecoration() {
         return decoration;
     }
+
 }
