@@ -3,6 +3,7 @@ package dev.kshl.kshlib.parsing;
 import dev.kshl.kshlib.function.ThrowingSupplier;
 import dev.kshl.kshlib.misc.UUIDHelper;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -49,5 +50,9 @@ public class OptionalParser {
 
     public static Optional<UUID> parseUUID(String string) {
         return get(() -> UUIDHelper.fromString(string));
+    }
+
+    public static Optional<BigDecimal> parseBigDecimal(String string) {
+        return get(() -> new BigDecimal(string));
     }
 }
