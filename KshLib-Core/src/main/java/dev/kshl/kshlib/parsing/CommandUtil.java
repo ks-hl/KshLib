@@ -1,7 +1,12 @@
 package dev.kshl.kshlib.parsing;
 
 import javax.annotation.Nonnull;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,7 +34,7 @@ public class CommandUtil {
      * Parses the provided arguments by iterating them all and splitting each argument by spaces, and iterating those.<br>
      * <br>
      * With each group of non-space characters, it will first attempt to match a flag with the pattern `#(\w+)`
-     * If that does not match, it will then testPassword if it is a key:value argument with the pattern `[\w-]+:.+`.
+     * If that does not match, it will then test if it is a key:value argument with the pattern `[\w-]+:.+`.
      * If that matches, it will continue to add arguments to the `value` unless another key:value or #flag is found.
      * If an argument is found which does not match either pattern and there was no preceding key:value pair
      * (i.e. it is the start of the string, or it is succeeding a #flag), it will be added to the ignored list.
@@ -76,8 +81,7 @@ public class CommandUtil {
         return command.substring(command.indexOf(" ")).trim();
     }
 
-    public record KeyValueResult(LinkedHashMap<String, String> keyValues, LinkedHashSet<String> flags,
-                                 ArrayList<String> ignored) {
+    public record KeyValueResult(LinkedHashMap<String, String> keyValues, LinkedHashSet<String> flags, ArrayList<String> ignored) {
     }
 
     private static <C extends Collection<String>> C filter(C c, Predicate<String> filter, Collector<String, ?, C> collector) {
