@@ -220,6 +220,8 @@ public class TabText {
 
                 lineBuilder.append("§f").append(fields[fieldPos]);
                 lineBuilder.append(pad);
+
+                System.out.printf("lineLengthActual:%s,lineLengthDesired:%s,Field:%s\n", lineLengthActual, lineLengthDesired, fields[fieldPos]);
             }
             outputBuilder.append(outputBuilder.isEmpty() ? lineBuilder.toString() : '\n' + lineBuilder.toString());
         }

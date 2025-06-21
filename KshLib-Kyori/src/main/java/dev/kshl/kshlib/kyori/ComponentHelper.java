@@ -100,7 +100,9 @@ public class ComponentHelper {
     }
 
     public static String strip(Component component) {
-        return PlainTextComponentSerializer.plainText().serialize(component);
+        String msg= PlainTextComponentSerializer.plainText().serialize(component);
+        msg = msg.replaceAll("[§&][a-fA-F0-9lmnorkLMNORK]", "");
+        return msg;
     }
 
     public static String strip(String text) {
@@ -170,6 +172,7 @@ public class ComponentHelper {
         return string + end;
     }
 
+    @Deprecated
     public static Component parseMiniMessage(String message, boolean allowHex, boolean allowColors, boolean allowBasicFormatting, boolean allowObfuscation, boolean allowClickEvent, boolean allowHoverEvent, boolean allowRainbow) {
         message = ComponentHelper.replaceLegacyWithMini(message);
         var tagBuilder = TagResolver.builder();
@@ -201,6 +204,7 @@ public class ComponentHelper {
         return MiniMessage.builder().tags(tagBuilder.build()).build().deserialize(message);
     }
 
+    @Deprecated
     public static String stripMiniMessage(String message, boolean stripHex, boolean stripColors, boolean stripBasicFormatting, boolean stripObfuscation, boolean stripClickEvent, boolean stripHoverEvent, boolean stripRainbow) {
         message = ComponentHelper.replaceLegacyWithMini(message);
         var tagBuilder = TagResolver.builder();
