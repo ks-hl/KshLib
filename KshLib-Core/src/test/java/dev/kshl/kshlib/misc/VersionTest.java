@@ -94,4 +94,10 @@ class VersionTest {
         assertTrue(new Version("1.2.3-rc1").compareTo(new Version("1.2.3-pre2")) > 0);
         assertTrue(new Version("1.2.3").compareTo(new Version("1.2.3-rc5")) > 0);
     }
+
+    @Test
+    void testNewerOlder() {
+        assertTrue(new Version("1.1").isNewerThan(new Version("1.0")));
+        assertTrue(new Version("1.1").isOlderThan(new Version("1.2")));
+    }
 }

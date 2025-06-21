@@ -7,8 +7,10 @@ import java.util.List;
 
 public class Version implements Comparable<Version> {
     private final List<Integer> version;
+    private final String versionString;
 
     public Version(String versionString) {
+        this.versionString = versionString;
         if (versionString.startsWith("v")) versionString = versionString.substring(1);
 
         if (!versionString.matches("\\d+(\\.\\d+)*((-pre|-rc)\\d)?")) {
@@ -47,6 +49,14 @@ public class Version implements Comparable<Version> {
         return 0;
     }
 
+    public boolean isNewerThan(@Nonnull Version other) {
+        return compareTo(other) > 0;
+    }
+
+    public boolean isOlderThan(@Nonnull Version other) {
+        return compareTo(other) < 0;
+    }
+
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof Version otherVersion)) return false;
@@ -56,5 +66,10 @@ public class Version implements Comparable<Version> {
     @Override
     public int hashCode() {
         return this.version.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return versionString;
     }
 }
