@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Deprecated
 public class TabText {
     public static final int CHAT_WINDOW_WIDTH = 320;
     public static final int MULTIPLAYER_LIST_WIDTH = 265;
@@ -221,7 +222,6 @@ public class TabText {
                 lineBuilder.append("§f").append(fields[fieldPos]);
                 lineBuilder.append(pad);
 
-                System.out.printf("lineLengthActual:%s,lineLengthDesired:%s,Field:%s\n", lineLengthActual, lineLengthDesired, fields[fieldPos]);
             }
             outputBuilder.append(outputBuilder.isEmpty() ? lineBuilder.toString() : '\n' + lineBuilder.toString());
         }

@@ -30,6 +30,18 @@ public class Reflection {
         throw new NoSuchFieldException();
     }
 
+    public static Object getFieldValue(Object object, Class<?> targetClass, String name) throws NoSuchFieldException, IllegalAccessException {
+        Field field;
+        try {
+            field = targetClass.getDeclaredField(name);
+        } catch (NoSuchFieldException e) {
+            if (targetClass.getSuperclass() == null) throw e;
+            return getFieldValue(object, targetClass.getSuperclass(), name);
+        }
+        field.setAccessible(true);
+        return field.get(object);
+    }
+
     public static Method getMethodAccessible(Object object, String name, Class<?>... parameterTypes) throws NoSuchMethodException {
         Method method = object.getClass().getMethod(name, parameterTypes);
         method.setAccessible(true);

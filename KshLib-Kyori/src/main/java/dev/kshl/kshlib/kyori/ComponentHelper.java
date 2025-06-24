@@ -27,7 +27,7 @@ import static net.kyori.adventure.text.format.NamedTextColor.WHITE;
 public class ComponentHelper {
     private static final Pattern HEX_PATTERN = Pattern.compile("&(#[a-fA-F0-9]{6})");
     private static final Pattern COLOR_PATTERN = Pattern.compile("&(([a-fA-F0-9])|(#[a-fA-F0-9]{6}))");
-    private static final Pattern FORMAT_PATTERN = Pattern.compile("&([mnlok])");
+    private static final Pattern FORMAT_PATTERN = Pattern.compile("&([mnlokr])");
 
     @Deprecated
     public static Component text(Object text) {
@@ -100,7 +100,7 @@ public class ComponentHelper {
     }
 
     public static String strip(Component component) {
-        String msg= PlainTextComponentSerializer.plainText().serialize(component);
+        String msg = PlainTextComponentSerializer.plainText().serialize(component);
         msg = msg.replaceAll("[§&][a-fA-F0-9lmnorkLMNORK]", "");
         return msg;
     }
@@ -162,14 +162,18 @@ public class ComponentHelper {
         StringBuilder end = new StringBuilder();
 
         Matcher matcher = FORMAT_PATTERN.matcher(string);
+        boolean containsReset = false;
         while (matcher.find()) {
             NamedTextColorChar format = NamedTextColorChar.getByChar(matcher.group(1).charAt(0));
-            end.insert(0, "</" + format.toString().toLowerCase() + ">");
+            if (format == NamedTextColorChar.RESET) {
+                containsReset = true;
+            } else {
+                end.insert(0, "</" + format.toString().toLowerCase() + ">");
+            }
         }
-        matcher = FORMAT_PATTERN.matcher(string);
-        string = matcher.replaceAll(match -> "<" + NamedTextColorChar.getByChar(match.group(1).charAt(0)).toString().toLowerCase() + ">");
-
-        return string + end;
+        string = FORMAT_PATTERN.matcher(string).replaceAll(match -> "<" + NamedTextColorChar.getByChar(match.group(1).charAt(0)).toString().toLowerCase() + ">");
+        if (!containsReset) string += end;
+        return string;
     }
 
     @Deprecated
