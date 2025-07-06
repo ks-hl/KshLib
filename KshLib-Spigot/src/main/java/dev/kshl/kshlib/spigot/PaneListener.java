@@ -59,16 +59,23 @@ public class PaneListener implements Listener {
 
                         if (e.getCurrentItem() != null) {
                             e.getCurrentItem().setAmount(1);
-                            if (cursor == null || cursor.getType() == Material.AIR) {
+                            boolean isSimilar = cursor != null && cursor.isSimilar(e.getCurrentItem());
+                            if (cursor == null || cursor.getType() == Material.AIR || isSimilar) {
+                                if (isSimilar && e.getAction() != InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+                                    if (cursor.getAmount() >= 64) return;
+                                    cursor.setAmount(cursor.getAmount() + 1);
+                                    return;
+                                }
+
                                 cursor = e.getCurrentItem().clone();
-                                if (e.getAction() == InventoryAction.CLONE_STACK) {
+
+                                if (e.getAction() == InventoryAction.CLONE_STACK || e.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
                                     cursor.setAmount(cursor.getMaxStackSize());
                                 }
                                 e.getWhoClicked().setItemOnCursor(cursor);
                                 return;
                             }
                         }
-                        e.getWhoClicked().setItemOnCursor(null);
                     } else {
                         if (e.getAction() != InventoryAction.MOVE_TO_OTHER_INVENTORY && e.getAction() != InventoryAction.HOTBAR_SWAP) {
                             e.setCancelled(false);
