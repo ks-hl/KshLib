@@ -10,25 +10,30 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 public class PaneListener implements Listener {
     private final Set<Pane> openPanes = new HashSet<>();
 
-    public Pane newPane(PaneType type, HumanEntity player) {
-        return new Pane(this, type, player);
+    public Pane newPane(PaneType type, HumanEntity player, Function<Pane, Inventory> inventoryFunction) {
+        Pane pane = new Pane(this, type, player);
+        pane.setInventory(inventoryFunction.apply(pane));
+        return pane;
     }
 
     public Pane newPane(PaneType type, HumanEntity player, int size, String title) {
-        Pane pane = newPane(type, player);
-        Inventory inventory = Bukkit.createInventory(pane, size, title);
-        pane.setInventory(inventory);
-        return pane;
+        return newPane(type, player, pane_ -> Bukkit.createInventory(pane_, size, title));
+    }
+
+    public Pane newPane(PaneType type, InventoryType inventoryType, HumanEntity player, String title) {
+        return newPane(type, player, pane_ -> Bukkit.createInventory(pane_, inventoryType, title));
     }
 
     protected void registerNewPane(Pane pane) {
