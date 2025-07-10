@@ -5,8 +5,11 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -85,28 +88,39 @@ public class TabTextKyori {
         }
     }
 
-    public static Component wrap(String string, int wrapWidth) {
+    public static List<Component> wrap(String string, int wrapWidth) {
         if (wrapWidth <= 0) {
             throw new IllegalArgumentException("Invalid width, must be >0");
         }
 
+        Pattern spaceFormatSwap = Pattern.compile("([&" + LegacyComponentSerializer.SECTION_CHAR + "][a-f0-9k-or])+(\\s+)");
+        string = spaceFormatSwap.matcher(string).replaceAll(match -> match.group(2) + match.group(1));
+
         int leadingSpaceWidth = 0;
         int leadingSpaceIndex = 0;
+        boolean precedingAmpersand = false;
         while (leadingSpaceIndex < string.length()) {
             char c = string.charAt(leadingSpaceIndex);
             if (c == '-') {
                 leadingSpaceWidth += 6;
             } else if (c == ' ') {
                 leadingSpaceWidth += 4;
+            } else if (c == '&' || c == LegacyComponentSerializer.SECTION_CHAR) {
+                precedingAmpersand = true;
+            } else if (precedingAmpersand && (c >= 'a' && c <= 'f' || c >= '0' && c <= '9' || c >= 'k' && c <= 'o' || c == 'r')) {
+                precedingAmpersand = false;
             } else {
                 break;
             }
             leadingSpaceIndex++;
         }
+        if (precedingAmpersand) {
+            leadingSpaceIndex--; // If it ended with an ampersand, it wasn't a color char
+        }
         Component leadingSpace = pad(leadingSpaceWidth);
 
-        Component out = null;
-        Component line = null;
+        List<Component> out = new ArrayList<>();
+        Component line = null, lastComponent = Component.empty();
         int lineWidth = 0;
 
         Pattern pattern = Pattern.compile("(\\s*)(\\S*)");
@@ -123,14 +137,14 @@ public class TabTextKyori {
 
             if (part.isEmpty()) continue;
 
-            Component spaceComponent = Component.text(space);
+            Component spaceComponent = ComponentHelper.legacy(space);
             Component partComponent = ComponentHelper.legacy(part);
 
             int spaceWidth = width(spaceComponent);
             int partWidth = width(partComponent);
 
             if (lineWidth > 0 && lineWidth + spaceWidth + partWidth > wrapWidth) {
-                out = appendLineTo(out, line, leadingSpace);
+                addLineTo(out, line, leadingSpace);
                 line = null;
                 lineWidth = 0;
                 spaceComponent = Component.empty();
@@ -138,28 +152,28 @@ public class TabTextKyori {
             }
 
             if (line == null) {
-                line = spaceComponent.append(partComponent);
-                lineWidth = spaceWidth + partWidth;
-            } else {
-                line = line.append(spaceComponent).append(partComponent);
-                lineWidth += spaceWidth + partWidth;
+                line = Component.empty();
             }
+            line = line.append(lastComponent = spaceComponent.mergeStyle(lastComponent).mergeStyle(spaceComponent));
+            line = line.append(lastComponent = partComponent.mergeStyle(lastComponent).mergeStyle(partComponent));
+            lineWidth += spaceWidth + partWidth;
 
             firstPart = false;
         }
 
-        if (line != null) {
-            out = appendLineTo(out, line, leadingSpace);
-        }
-
-        return (out == null) ? Component.empty() : out.compact();
+        addLineTo(out, line, leadingSpace);
+        return out;
     }
 
-    private static Component appendLineTo(Component out, Component line, Component leadingSpace) {
-        if (out == null) {
-            return line;
-        } else {
-            return out.appendNewline().append(leadingSpace).append(line);
+    private static void addLineTo(List<Component> out, Component line, Component leadingSpace) {
+        if (line == null) return;
+
+        if (!out.isEmpty()) {
+            line = leadingSpace.append(line);
         }
+
+        if (Component.empty().equals(line)) line = Component.text(""); // Maintains empty line breaks
+
+        out.add(line);
     }
 }

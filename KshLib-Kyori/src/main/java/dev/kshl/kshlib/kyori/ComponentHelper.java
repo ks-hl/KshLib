@@ -278,4 +278,47 @@ public class ComponentHelper {
                 })
                 .build());
     }
+
+    public static String toString(Component component) {
+        StringBuilder out = new StringBuilder();
+        toString(component, out, 0);
+        return out.toString();
+    }
+
+    private static void toString(Component component, StringBuilder builder, int indent) {
+        if (component == null) component = Component.empty();
+        else component = component.compact();
+
+        if (!builder.isEmpty()) builder.append("\n");
+
+        String pad = " ".repeat(indent);
+        builder.append(pad);
+
+        if (component instanceof TextComponent textComponent) {
+            builder.append("\"").append(textComponent.content()).append("\"");
+            StringBuilder desc = new StringBuilder();
+            if (textComponent.color() != null) {
+                desc.append(textComponent.color());
+            }
+            for (TextDecoration decoration : TextDecoration.values()) {
+                if (textComponent.hasDecoration(decoration)) {
+                    if (!desc.toString().isBlank()) desc.append(",");
+                    desc.append(decoration.toString().toLowerCase());
+                }
+            }
+            if (!desc.isEmpty()) {
+                builder.append(" (").append(desc).append(")");
+            }
+        }
+        if (!component.children().isEmpty()) {
+            builder.append(" [");
+            boolean first = true;
+            for (Component child : component.children()) {
+                if (first) first = false;
+                else builder.append(",");
+                toString(child, builder, indent + 2);
+            }
+            builder.append("\n").append(pad).append("]");
+        }
+    }
 }
