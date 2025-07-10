@@ -1,14 +1,14 @@
 package dev.kshl.kshlib.kyori;
 
 import dev.kshl.kshlib.misc.Characters;
-import dev.kshl.kshlib.misc.TabText;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
+import java.util.regex.Pattern;
 
 public class TabTextKyori {
     public static Component header(@Nullable Component left, @Nullable Component center, @Nullable Component right, int width) {
@@ -67,7 +67,7 @@ public class TabTextKyori {
             builder.append(Component.text(one, textColor));
         }
 
-        return builder.build();
+        return builder.build().compact();
     }
 
     public static int width(Component component) {
@@ -81,8 +81,59 @@ public class TabTextKyori {
         }
     }
 
-    static int width0(Component component) {
-        String text = LegacyComponentSerializer.legacySection().serialize(component);
-        return TabText.width(text);
+    public static Component wrap(String string, int wrapWidth) {
+        if (wrapWidth <= 0) {
+            throw new IllegalArgumentException("Invalid width, must be >0");
+        }
+
+        int leadingSpaceWidth = 0;
+        for (int c : string.codePoints().toArray()) {
+            if (c == '-') {
+                leadingSpaceWidth += 6;
+            } else if (c == ' ') {
+                leadingSpaceWidth += 4;
+            } else break;
+        }
+        Component leadingSpace = pad(leadingSpaceWidth);
+
+        Component out = null;
+        Component line = null;
+
+        int lineWidth = 0;
+        System.out.println(Arrays.toString(string.split("(?= )", -1)));
+        for (String part : string.split("(?= )")) {
+            Component componentPart = ComponentHelper.legacy(part);
+            int partWidth = width(componentPart);
+            System.out.println(part+","+lineWidth+","+partWidth+","+wrapWidth);
+            if (lineWidth > 0 && lineWidth + partWidth > wrapWidth) {
+                out = appendLineTo(out, line, leadingSpace);
+                line = null;
+                lineWidth = 0;
+            }
+            lineWidth += partWidth;
+            if (line == null) {
+                line = componentPart;
+            } else {
+                line = line.append(componentPart);
+            }
+        }
+        if (line != null) {
+            out = appendLineTo(out, line, leadingSpace);
+        }
+        if (out == null) return Component.empty();
+        return out.compact();
+    }
+
+    private static Component appendLineTo(Component out, Component line, Component leadingSpace) {
+        line = line.replaceText(builder -> builder
+                .once()
+                .match(Pattern.compile("^[\\s-]*(.*)$"))
+                .replacement((match, builder2) -> Component.text(match.group(1)))
+        );
+        if (out == null) {
+            return line;
+        } else {
+            return out.appendNewline().append(leadingSpace).append(line);
+        }
     }
 }
