@@ -87,6 +87,7 @@ public class ComponentHelper {
     }
 
     public static Component legacy(String msg) {
+        if (msg == null) return Component.empty();
         msg = msg.replace("§", "&");
         return LegacyComponentSerializer.builder().character('&').hexColors().build().deserialize(msg.replace("§", "&"));
     }

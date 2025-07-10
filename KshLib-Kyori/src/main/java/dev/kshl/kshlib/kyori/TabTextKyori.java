@@ -90,7 +90,6 @@ public class TabTextKyori {
             throw new IllegalArgumentException("Invalid width, must be >0");
         }
 
-        // Compute leading space width
         int leadingSpaceWidth = 0;
         int leadingSpaceIndex = 0;
         while (leadingSpaceIndex < string.length()) {
@@ -134,21 +133,19 @@ public class TabTextKyori {
                 out = appendLineTo(out, line, leadingSpace);
                 line = null;
                 lineWidth = 0;
-            }
-
-            if (firstPart) {
-                firstPart = false;
-            } else if (line == null) {
                 spaceComponent = Component.empty();
+                spaceWidth = 0;
             }
 
             if (line == null) {
                 line = spaceComponent.append(partComponent);
-                lineWidth = partWidth;
+                lineWidth = spaceWidth + partWidth;
             } else {
                 line = line.append(spaceComponent).append(partComponent);
-                lineWidth += partWidth;
+                lineWidth += spaceWidth + partWidth;
             }
+
+            firstPart = false;
         }
 
         if (line != null) {
