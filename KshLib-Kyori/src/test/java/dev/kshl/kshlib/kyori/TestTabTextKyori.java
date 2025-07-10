@@ -30,22 +30,18 @@ public class TestTabTextKyori {
 
     @Test
     public void testWrap() {
-        assertEqualsComponents(Component.text("hi"), TabTextKyori.wrap("hi", Integer.MAX_VALUE), true);
-        assertEqualsComponents(Component.text("hi hi hi"), TabTextKyori.wrap("hi hi hi", Integer.MAX_VALUE), true);
-        assertEqualsComponents(Component.text(".. ..\n.."), TabTextKyori.wrap(".. .. ..", 12), true);
-        assertEqualsComponents(Component.text(" ..\n "), TabTextKyori.wrap(" .. ", 4), true);
-        assertEqualsComponents(Component.text("..................."), TabTextKyori.wrap("...................", 4), true); // Test too long of words just aren't wrapped
-        assertEqualsComponents(Component.text(" - ..\n   ..."), TabTextKyori.wrap(" - ....", 18), true);
+        assertEqualsComponents(Component.text("hi"), TabTextKyori.wrap("hi", Integer.MAX_VALUE));
+        assertEqualsComponents(Component.text("hi hi hi"), TabTextKyori.wrap("hi hi hi", Integer.MAX_VALUE));
+        assertEqualsComponents(Component.text(".. ..\n.."), TabTextKyori.wrap(".. .. ..", 12));
+        assertEqualsComponents(Component.text(" ..\n ."), TabTextKyori.wrap(" .. .", 4));
+        assertEqualsComponents(Component.text("..................."), TabTextKyori.wrap("...................", 4)); // Test too long of words just aren't wrapped
+        assertEqualsComponents(Component.text(" - ...\n   .."), TabTextKyori.wrap(" - ... .", 10));
     }
 
-    private static void assertEqualsComponents(Component a, Component b, boolean strip) {
-        Object aO = a.compact(), bO = b.compact();
-        if (!strip) {
-            aO = PlainTextComponentSerializer.plainText().serialize(a);
-            bO = PlainTextComponentSerializer.plainText().serialize(a);
-        }
-        assertEquals(aO, bO);
-        System.out.println(aO + "==" + bO);
+    private static void assertEqualsComponents(Component expected, Component actual) {
+        String expectedPlain = PlainTextComponentSerializer.plainText().serialize(expected);
+        String actualPlain = PlainTextComponentSerializer.plainText().serialize(actual);
+        assertEquals(expectedPlain, actualPlain);
     }
 
     private static void test(String str) {

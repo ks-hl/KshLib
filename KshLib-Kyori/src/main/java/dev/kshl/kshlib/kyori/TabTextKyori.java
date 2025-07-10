@@ -7,7 +7,7 @@ import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 
 import javax.annotation.Nullable;
-import java.util.Arrays;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class TabTextKyori {
@@ -52,17 +52,21 @@ public class TabTextKyori {
 
         TextComponent.Builder builder = Component.text();
 
-        String spaces = " ".repeat(width / 4);
+        int numSpaces = width / 4;
+        width -= numSpaces * 4;
+        String spaces = " ".repeat(numSpaces);
         if (!spaces.isEmpty()) {
-            builder.append(Component.text(spaces, textColor));
+            builder.append(Component.text(spaces));
         }
 
-        String dots = ".".repeat(width % 4 / 2);
+        int numDots = width / 2;
+        width -= numDots * 2;
+        String dots = ".".repeat(numDots);
         if (!dots.isEmpty()) {
             builder.append(Component.text(dots, textColor));
         }
 
-        String one = Characters.ONE_LENGTH_DOT.repeat(width % 2);
+        String one = Characters.ONE_LENGTH_DOT.repeat(width);
         if (!one.isEmpty()) {
             builder.append(Component.text(one, textColor));
         }
@@ -86,50 +90,75 @@ public class TabTextKyori {
             throw new IllegalArgumentException("Invalid width, must be >0");
         }
 
+        // Compute leading space width
         int leadingSpaceWidth = 0;
-        for (int c : string.codePoints().toArray()) {
+        int leadingSpaceIndex = 0;
+        while (leadingSpaceIndex < string.length()) {
+            char c = string.charAt(leadingSpaceIndex);
             if (c == '-') {
                 leadingSpaceWidth += 6;
             } else if (c == ' ') {
                 leadingSpaceWidth += 4;
-            } else break;
+            } else {
+                break;
+            }
+            leadingSpaceIndex++;
         }
         Component leadingSpace = pad(leadingSpaceWidth);
 
         Component out = null;
         Component line = null;
-
         int lineWidth = 0;
-        System.out.println(Arrays.toString(string.split("(?= )", -1)));
-        for (String part : string.split("(?= )")) {
-            Component componentPart = ComponentHelper.legacy(part);
-            int partWidth = width(componentPart);
-            System.out.println(part+","+lineWidth+","+partWidth+","+wrapWidth);
-            if (lineWidth > 0 && lineWidth + partWidth > wrapWidth) {
+
+        Pattern pattern = Pattern.compile("(\\s*)(\\S*)");
+        Matcher matcher = pattern.matcher(string.substring(leadingSpaceIndex));
+        boolean firstPart = true;
+
+        while (matcher.find()) {
+            String space = matcher.group(1);
+            String part = matcher.group(2);
+
+            if (firstPart) {
+                space = string.substring(0, leadingSpaceIndex);
+            }
+
+            if (part.isEmpty()) continue;
+
+            Component spaceComponent = Component.text(space);
+            Component partComponent = ComponentHelper.legacy(part);
+
+            int spaceWidth = width(spaceComponent);
+            int partWidth = width(partComponent);
+
+            if (lineWidth > 0 && lineWidth + spaceWidth + partWidth > wrapWidth) {
                 out = appendLineTo(out, line, leadingSpace);
                 line = null;
                 lineWidth = 0;
             }
-            lineWidth += partWidth;
+
+            if (firstPart) {
+                firstPart = false;
+            } else if (line == null) {
+                spaceComponent = Component.empty();
+            }
+
             if (line == null) {
-                line = componentPart;
+                line = spaceComponent.append(partComponent);
+                lineWidth = partWidth;
             } else {
-                line = line.append(componentPart);
+                line = line.append(spaceComponent).append(partComponent);
+                lineWidth += partWidth;
             }
         }
+
         if (line != null) {
             out = appendLineTo(out, line, leadingSpace);
         }
-        if (out == null) return Component.empty();
-        return out.compact();
+
+        return (out == null) ? Component.empty() : out.compact();
     }
 
     private static Component appendLineTo(Component out, Component line, Component leadingSpace) {
-        line = line.replaceText(builder -> builder
-                .once()
-                .match(Pattern.compile("^[\\s-]*(.*)$"))
-                .replacement((match, builder2) -> Component.text(match.group(1)))
-        );
         if (out == null) {
             return line;
         } else {
