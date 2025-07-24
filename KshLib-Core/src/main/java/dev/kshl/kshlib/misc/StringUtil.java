@@ -44,4 +44,12 @@ public class StringUtil {
 
         return tokens;
     }
+
+    public static long count(String string, int toCount) {
+        return string.codePoints().filter(c -> c == toCount).count();
+    }
+
+    public static long count(String string, String toCount) {
+        return count(string, Character.codePointAt(toCount, 0));
+    }
 }

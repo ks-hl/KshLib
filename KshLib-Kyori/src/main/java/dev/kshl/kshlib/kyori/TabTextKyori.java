@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.kyori;
 
 import dev.kshl.kshlib.misc.Characters;
+import dev.kshl.kshlib.misc.StringUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.TextColor;
@@ -88,35 +89,26 @@ public class TabTextKyori {
         }
     }
 
+    private static final String anyColorOrFormatPattern = "[&" + LegacyComponentSerializer.SECTION_CHAR + "][a-f0-9k-or]";
+
     public static List<Component> wrap(String string, int wrapWidth) {
         if (wrapWidth <= 0) {
             throw new IllegalArgumentException("Invalid width, must be >0");
         }
 
-        Pattern spaceFormatSwap = Pattern.compile("([&" + LegacyComponentSerializer.SECTION_CHAR + "][a-f0-9k-or])+(\\s+)");
+        Pattern spaceFormatSwap = Pattern.compile("(" + anyColorOrFormatPattern + ")+( +)");
         string = spaceFormatSwap.matcher(string).replaceAll(match -> match.group(2) + match.group(1));
 
+        Pattern precedingSpacePattern = Pattern.compile("^(?:( *)(" + anyColorOrFormatPattern + ")*-)?( *)");
+        Matcher precedingSpaceMatcher = precedingSpacePattern.matcher(string);
         int leadingSpaceWidth = 0;
         int leadingSpaceIndex = 0;
-        boolean precedingAmpersand = false;
-        while (leadingSpaceIndex < string.length()) {
-            char c = string.charAt(leadingSpaceIndex);
-            if (c == '-') {
-                leadingSpaceWidth += 6;
-            } else if (c == ' ') {
-                leadingSpaceWidth += 4;
-            } else if (c == '&' || c == LegacyComponentSerializer.SECTION_CHAR) {
-                precedingAmpersand = true;
-            } else if (precedingAmpersand && (c >= 'a' && c <= 'f' || c >= '0' && c <= '9' || c >= 'k' && c <= 'o' || c == 'r')) {
-                precedingAmpersand = false;
-            } else {
-                break;
-            }
-            leadingSpaceIndex++;
+        if (precedingSpaceMatcher.find()) {
+            leadingSpaceWidth += (int) (StringUtil.count(precedingSpaceMatcher.group(), ' ') * 4);
+            leadingSpaceWidth += (int) (StringUtil.count(precedingSpaceMatcher.group(), '-') * 6);
+            leadingSpaceIndex = precedingSpaceMatcher.group().length();
         }
-        if (precedingAmpersand) {
-            leadingSpaceIndex--; // If it ended with an ampersand, it wasn't a color char
-        }
+
         Component leadingSpace = pad(leadingSpaceWidth);
 
         List<Component> out = new ArrayList<>();
