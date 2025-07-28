@@ -321,4 +321,19 @@ public class ComponentHelper {
             builder.append("\n").append(pad).append("]");
         }
     }
+
+    public static Component repeat(Component component, int times) {
+        if (times < 0) {
+            throw new IllegalArgumentException("times < 0 (" + times + ")");
+        }
+        if (times > 1_000_000) {
+            throw new IllegalArgumentException("times > 1,000,000 (" + times + ")");
+        }
+
+        TextComponent.Builder builder = Component.text();
+        for (int i = 0; i < times; i++) {
+            builder.append(component);
+        }
+        return builder.build();
+    }
 }

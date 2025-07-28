@@ -42,7 +42,7 @@ public class TestUUIDAPI {
         for (int i = 0; i < 2; i++) {
             testGetName.accept(".Heliosaltes", UUID.fromString("00000000-0000-0000-0009-01f8e0ee602f"));
 //            testGetUUID.accept(".Heliosares5187", UUID.fromString("00000000-0000-0000-0009-0000057e2dae"));
-            testGetName.accept("Heliosares", UUID.fromString("4f159a36-2b22-4fea-8b4e-fedb85c3d61a"));
+            testGetName.accept("HeliosTM", UUID.fromString("4f159a36-2b22-4fea-8b4e-fedb85c3d61a"));
         }
     }
 }
