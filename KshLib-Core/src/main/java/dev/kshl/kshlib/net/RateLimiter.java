@@ -1,34 +1,57 @@
 package dev.kshl.kshlib.net;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class RateLimiter {
-    private final WebServer webServer;
-    private final Map<String, List<Long>> map = new HashMap<>();
-    private long lastPurged = System.currentTimeMillis();
-    private final String endpoint;
+    private final Map<String, Bucket> buckets = new HashMap<>();
+    private long lastRefill;
     private final Params params;
 
-    public RateLimiter(WebServer webServer, String endpoint, Params params) {
-        this.webServer = webServer;
-        this.endpoint = endpoint;
+    public RateLimiter(Params params) {
         this.params = params;
     }
 
-    public synchronized boolean allow(String sender, String endpoint) throws WebServer.WebException {
-        if (System.currentTimeMillis() - lastPurged > 100) {
-            lastPurged = System.currentTimeMillis();
-            map.values().forEach(set -> set.removeIf(time -> lastPurged - time > params.withinMillis()));
+    /**
+     * Test if the request is within the rate limits, and deprecate the token allocation by one
+     *
+     * @return Whether the request is within the rate limits
+     */
+    public synchronized boolean check(String sender) {
+        long timeSinceRefill = System.currentTimeMillis() - lastRefill;
+        if (timeSinceRefill >= 10) {
+            lastRefill = System.currentTimeMillis();
+            double add = params.maxRequests() / (double) params.withinMillis() * timeSinceRefill;
+            buckets.values().forEach(bucket -> bucket.tokens += add);
+            buckets.values().removeIf(bucket -> bucket.tokens >= params.maxRequests());
         }
-        List<Long> times = map.computeIfAbsent(sender, o -> new ArrayList<>());
-        times.add(System.currentTimeMillis());
-        webServer.onRequest(sender, this.endpoint == null, endpoint, times.size());
-        return times.size() > params.maxRequests();
+        Bucket bucket = buckets.computeIfAbsent(sender, o -> new Bucket(params.maxRequests()));
+        if (bucket.tokens < 1) return false;
+        bucket.tokens--;
+        return true;
+    }
+
+    /**
+     * Applies the rate limit to all senders equally.
+     *
+     * @return Whether the request is within the rate limits
+     */
+    public boolean checkGlobal() {
+        return check(null);
+    }
+
+    public Params getParams() {
+        return params;
     }
 
     public record Params(int maxRequests, long withinMillis) {
+    }
+
+    private static class Bucket {
+        private double tokens;
+
+        public Bucket(double tokens) {
+            this.tokens = tokens;
+        }
     }
 }

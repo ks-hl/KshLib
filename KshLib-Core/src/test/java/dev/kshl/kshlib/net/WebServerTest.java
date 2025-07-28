@@ -19,9 +19,9 @@ public class WebServerTest {
     public void testWebServer() throws IOException, ExecutionException, InterruptedException {
         WebServer webServer = new TestWebServer() {
             @Override
-            protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint, int numberOfRequests) throws WebException {
+            protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint) throws WebException {
                 if (endpoint.equals("/ban")) throw new WebException(HTTPResponseCode.FORBIDDEN);
-                info(String.format("    Rate Limiter [%s] %s=%s", sender, isGlobalLimiter ? "GLOBAL" : endpoint, numberOfRequests));
+                info(String.format("    Rate Limiter [%s] %s", sender, isGlobalLimiter ? "GLOBAL" : endpoint));
             }
 
             @Override
@@ -145,7 +145,7 @@ public class WebServerTest {
 
     private static class TestWebServer extends WebServer {
         public TestWebServer() {
-            super(0, 0, 1024, new RateLimiter.Params(9, 1000000L), true);
+            super(0, 0, 1024, new RateLimiter.Params(9, Long.MAX_VALUE), true);
         }
 
         @Override

@@ -70,7 +70,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
         this.port = port;
         this.numberOfProxiesToResolve = numberOfProxiesToResolve;
         this.maxRequestLength = maxRequestLength;
-        this.globalRateLimiter = new RateLimiter(this, null, globalRateLimitParams);
+        this.globalRateLimiter = new RateLimiter(globalRateLimitParams);
         this.requireJSONInput = requireJSONInput;
 
         this.origins = new HashSet<>(List.of(origins));
@@ -148,16 +148,20 @@ public abstract class WebServer implements Runnable, HttpHandler {
                 final String queryString = t.getRequestURI().getQuery();
                 msg = sender + " " + t.getRequestMethod() + " " + endpoint + (queryString != null ? "?" + queryString : "") + " - %d";
 
+                {
                     boolean global, specific;
                     synchronized (globalRateLimiter) {
-                        global = globalRateLimiter.allow(sender, endpoint);
+                        global = globalRateLimiter.check(sender);
                     }
+                    onRequest(sender, true, endpoint);
                     synchronized (endpointSpecificRateLimiter) {
-                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> new RateLimiter(this, endpoint_, getRateLimitParameters(endpoint_))).allow(sender, endpoint);
+                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> new RateLimiter(getRateLimitParameters(endpoint_))).check(sender);
                     }
-                    if (global || specific) {
+                    onRequest(sender, false, endpoint);
+                    if (!global || !specific) {
                         throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
                     }
+                }
 
                 requestString = new String(t.getRequestBody().readAllBytes());
                 if (requestString.isEmpty()) requestString = "{}";
@@ -368,7 +372,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     protected RateLimiter.Params getRateLimitParameters(@SuppressWarnings("unused") String endpoint) {
-        return globalRateLimiter.params;
+        return globalRateLimiter.getParams();
     }
 
     public static class WebException extends IOException {
@@ -461,13 +465,12 @@ public abstract class WebServer implements Runnable, HttpHandler {
     /**
      * Called twice for each request, one for global, one for endpoint-specific.
      *
-     * @param sender           IP address of the sender.
-     * @param isGlobalLimiter  Whether this call is for the global limiter or the endpoint-specific limiter.
-     * @param endpoint         The endpoint requested.
-     * @param numberOfRequests The number of requests, including this one, within the period of time specified by the applicable {@link RateLimiter.Params}
+     * @param sender          IP address of the sender.
+     * @param isGlobalLimiter Whether this call is for the global limiter or the endpoint-specific limiter.
+     * @param endpoint        The endpoint requested.
      * @throws WebException In order to disallow the connection for any reason.
      */
-    protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint, int numberOfRequests) throws WebException {
+    protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint) throws WebException {
     }
 
     protected void logRequest(Request request, Response response, String msg) {
