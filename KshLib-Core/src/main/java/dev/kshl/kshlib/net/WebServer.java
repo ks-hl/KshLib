@@ -51,7 +51,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }};
 
     public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, boolean requireJSONInput, String... origins) {
-        this(port, numberOfProxiesToResolve, maxRequestLength, new RateLimitParams(5, 5000L), requireJSONInput, origins);
+        this(port, numberOfProxiesToResolve, maxRequestLength, new RateLimiter.Params(5, 5000L), requireJSONInput, origins);
     }
 
     private static Map<String, String> parseQuery(String query) throws WebException {
@@ -66,11 +66,11 @@ public abstract class WebServer implements Runnable, HttpHandler {
         return params;
     }
 
-    public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, RateLimitParams globalRateLimitParams, boolean requireJSONInput, String... origins) {
+    public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, RateLimiter.Params globalRateLimitParams, boolean requireJSONInput, String... origins) {
         this.port = port;
         this.numberOfProxiesToResolve = numberOfProxiesToResolve;
         this.maxRequestLength = maxRequestLength;
-        this.globalRateLimiter = new RateLimiter(null, globalRateLimitParams);
+        this.globalRateLimiter = new RateLimiter(this, null, globalRateLimitParams);
         this.requireJSONInput = requireJSONInput;
 
         this.origins = new HashSet<>(List.of(origins));
@@ -150,10 +150,10 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
                     boolean global, specific;
                     synchronized (globalRateLimiter) {
-                        global = globalRateLimiter.doRateLimit(sender, endpoint);
+                        global = globalRateLimiter.allow(sender, endpoint);
                     }
                     synchronized (endpointSpecificRateLimiter) {
-                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> new RateLimiter(endpoint_, getRateLimitParameters(endpoint_))).doRateLimit(sender, endpoint);
+                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> new RateLimiter(this, endpoint_, getRateLimitParameters(endpoint_))).allow(sender, endpoint);
                     }
                     if (global || specific) {
                         throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
@@ -367,7 +367,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
         }
     }
 
-    protected RateLimitParams getRateLimitParameters(@SuppressWarnings("unused") String endpoint) {
+    protected RateLimiter.Params getRateLimitParameters(@SuppressWarnings("unused") String endpoint) {
         return globalRateLimiter.params;
     }
 
@@ -393,9 +393,6 @@ public abstract class WebServer implements Runnable, HttpHandler {
         public String getUserErrorMessage() {
             return userErrorMessage;
         }
-    }
-
-    public record RateLimitParams(int maxRequests, long withinMillis) {
     }
 
     public static class Response {
@@ -461,36 +458,13 @@ public abstract class WebServer implements Runnable, HttpHandler {
         }
     }
 
-    protected class RateLimiter {
-        private final Map<String, List<Long>> map = new HashMap<>();
-        private long lastPurged = System.currentTimeMillis();
-        private final String endpoint;
-        private final RateLimitParams params;
-
-        public RateLimiter(String endpoint, RateLimitParams params) {
-            this.endpoint = endpoint;
-            this.params = params;
-        }
-
-        public synchronized boolean doRateLimit(String sender, String endpoint) throws WebException {
-            if (System.currentTimeMillis() - lastPurged > 100) {
-                lastPurged = System.currentTimeMillis();
-                map.values().forEach(set -> set.removeIf(time -> lastPurged - time > params.withinMillis()));
-            }
-            List<Long> times = map.computeIfAbsent(sender, o -> new ArrayList<>());
-            times.add(System.currentTimeMillis());
-            onRequest(sender, this.endpoint == null, endpoint, times.size());
-            return times.size() > params.maxRequests();
-        }
-    }
-
     /**
      * Called twice for each request, one for global, one for endpoint-specific.
      *
      * @param sender           IP address of the sender.
      * @param isGlobalLimiter  Whether this call is for the global limiter or the endpoint-specific limiter.
      * @param endpoint         The endpoint requested.
-     * @param numberOfRequests The number of requests, including this one, within the period of time specified by the applicable {@link RateLimitParams}
+     * @param numberOfRequests The number of requests, including this one, within the period of time specified by the applicable {@link RateLimiter.Params}
      * @throws WebException In order to disallow the connection for any reason.
      */
     protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint, int numberOfRequests) throws WebException {
