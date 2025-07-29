@@ -11,16 +11,20 @@ import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Signature;
 import java.security.spec.EncodedKeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Scanner;
 import java.util.UUID;
@@ -132,6 +136,32 @@ public class EncryptionRSA {
     public byte[] decrypt(byte[] bytes) throws IllegalBlockSizeException, BadPaddingException {
         synchronized (decryptCipher) {
             return decryptCipher.doFinal(bytes);
+        }
+    }
+
+    public byte[] sign(byte[] plaintext) throws GeneralSecurityException {
+        if (!(getKey() instanceof PrivateKey privateKey)) {
+            throw new IllegalStateException("Can not sign with a public key");
+        }
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(privateKey);
+        sig.update(plaintext);
+        return sig.sign();
+    }
+
+    public void validateSignature(byte[] claimed, byte[] actual, byte[] signature) throws GeneralSecurityException {
+        if (!(getKey() instanceof PublicKey publicKey)) {
+            throw new IllegalStateException("Can not validate signature with a private key");
+        }
+        if (!Arrays.equals(claimed, actual)) {
+            throw new InvalidKeyException("TLS cert fingerprint mismatch");
+        }
+
+        Signature verifier = Signature.getInstance("SHA256withRSA");
+        verifier.initVerify(publicKey);
+        verifier.update(claimed);
+        if (!verifier.verify(signature)) {
+            throw new InvalidKeyException("TLS fingerprint signature invalid");
         }
     }
 }
