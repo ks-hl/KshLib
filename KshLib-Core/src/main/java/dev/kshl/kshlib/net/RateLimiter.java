@@ -6,10 +6,12 @@ import java.util.Map;
 public class RateLimiter {
     private final Map<String, Bucket> buckets = new HashMap<>();
     private long lastRefill;
-    private final Params params;
+    private final int maxRequests;
+    private final long window;
 
-    public RateLimiter(Params params) {
-        this.params = params;
+    public RateLimiter(int maxRequests, long window) {
+        this.maxRequests = maxRequests;
+        this.window = window;
     }
 
     /**
@@ -21,11 +23,11 @@ public class RateLimiter {
         long timeSinceRefill = System.currentTimeMillis() - lastRefill;
         if (timeSinceRefill >= 10) {
             lastRefill = System.currentTimeMillis();
-            double add = params.maxRequests() / (double) params.withinMillis() * timeSinceRefill;
+            double add = getMaxRequests() / (double) getWindow() * timeSinceRefill;
             buckets.values().forEach(bucket -> bucket.tokens += add);
-            buckets.values().removeIf(bucket -> bucket.tokens >= params.maxRequests());
+            buckets.values().removeIf(bucket -> bucket.tokens >= getMaxRequests());
         }
-        Bucket bucket = buckets.computeIfAbsent(sender, o -> new Bucket(params.maxRequests()));
+        Bucket bucket = buckets.computeIfAbsent(sender, o -> new Bucket(getMaxRequests()));
         if (bucket.tokens < 1) return false;
         bucket.tokens--;
         return true;
@@ -40,11 +42,12 @@ public class RateLimiter {
         return check(null);
     }
 
-    public Params getParams() {
-        return params;
+    public int getMaxRequests() {
+        return maxRequests;
     }
 
-    public record Params(int maxRequests, long withinMillis) {
+    public long getWindow() {
+        return window;
     }
 
     private static class Bucket {
@@ -53,5 +56,9 @@ public class RateLimiter {
         public Bucket(double tokens) {
             this.tokens = tokens;
         }
+    }
+
+    public RateLimiter copy() {
+        return new RateLimiter(getMaxRequests(), getWindow());
     }
 }

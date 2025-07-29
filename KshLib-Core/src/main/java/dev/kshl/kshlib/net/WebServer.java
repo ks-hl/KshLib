@@ -51,7 +51,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }};
 
     public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, boolean requireJSONInput, String... origins) {
-        this(port, numberOfProxiesToResolve, maxRequestLength, new RateLimiter.Params(5, 5000L), requireJSONInput, origins);
+        this(port, numberOfProxiesToResolve, maxRequestLength, new RateLimiter(600, 600_000L), requireJSONInput, origins);
     }
 
     private static Map<String, String> parseQuery(String query) throws WebException {
@@ -66,11 +66,11 @@ public abstract class WebServer implements Runnable, HttpHandler {
         return params;
     }
 
-    public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, RateLimiter.Params globalRateLimitParams, boolean requireJSONInput, String... origins) {
+    public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, RateLimiter globalRateLimiter, boolean requireJSONInput, String... origins) {
         this.port = port;
         this.numberOfProxiesToResolve = numberOfProxiesToResolve;
         this.maxRequestLength = maxRequestLength;
-        this.globalRateLimiter = new RateLimiter(globalRateLimitParams);
+        this.globalRateLimiter = globalRateLimiter;
         this.requireJSONInput = requireJSONInput;
 
         this.origins = new HashSet<>(List.of(origins));
@@ -155,7 +155,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
                     }
                     onRequest(sender, true, endpoint);
                     synchronized (endpointSpecificRateLimiter) {
-                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> new RateLimiter(getRateLimitParameters(endpoint_))).check(sender);
+                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> globalRateLimiter.copy()).check(sender);
                     }
                     onRequest(sender, false, endpoint);
                     if (!global || !specific) {
@@ -369,10 +369,6 @@ public abstract class WebServer implements Runnable, HttpHandler {
             int id = Integer.parseInt(parts[0]);
             return new SQLAPIKeyManager.APIKeyPair(id, parts[1]);
         }
-    }
-
-    protected RateLimiter.Params getRateLimitParameters(@SuppressWarnings("unused") String endpoint) {
-        return globalRateLimiter.getParams();
     }
 
     public static class WebException extends IOException {

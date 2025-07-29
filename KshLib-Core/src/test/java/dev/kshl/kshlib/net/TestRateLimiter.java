@@ -11,8 +11,7 @@ public class TestRateLimiter {
 
     @BeforeEach
     void setUp() {
-        RateLimiter.Params params = new RateLimiter.Params(5, 50); // 5 requests per second
-        rateLimiter = new RateLimiter(params);
+        rateLimiter = new RateLimiter(5,50);
     }
 
     @Test

@@ -145,7 +145,7 @@ public class WebServerTest {
 
     private static class TestWebServer extends WebServer {
         public TestWebServer() {
-            super(0, 0, 1024, new RateLimiter.Params(9, Long.MAX_VALUE), true);
+            super(0, 0, 1024, new RateLimiter(9, Long.MAX_VALUE), true);
         }
 
         @Override
