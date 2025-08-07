@@ -9,8 +9,8 @@ import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import javax.annotation.Nullable;
 
+import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BiConsumer;
@@ -112,7 +112,7 @@ public class Paginator<T> {
                     .clickEvent(ClickEvent.runCommand(commandFormat.replace("%page%", "0"))) //
                     .hoverEvent(HoverEvent.showText(Component.text("First Page", secondaryColor))));
 
-            ComponentHelper.appendSpace(builder);
+            builder.append(Component.space());
 
             // PREVIOUS PAGE
             builder.append(left1 //
@@ -122,8 +122,7 @@ public class Paginator<T> {
             builder.append(leftGray);
         }
 
-        ComponentHelper.appendSpace(builder);
-        ComponentHelper.appendSpace(builder);
+        builder.append(Component.space()).append(Component.space());
 
         if ((page + 1) < numOfPages) {
             // NEXT PAGE
@@ -131,7 +130,7 @@ public class Paginator<T> {
                     .clickEvent(ClickEvent.runCommand(commandFormat.replace("%page%", String.valueOf(Math.max(0, page + 1))))) //
                     .hoverEvent(HoverEvent.showText(Component.text("Next Page", secondaryColor))));
 
-            ComponentHelper.appendSpace(builder);
+            builder.append(Component.space());
 
             // LAST PAGE
             builder.append(right2 //

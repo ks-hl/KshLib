@@ -11,6 +11,7 @@ public class MiniMessageBuilder {
     private final String string;
     private boolean allowHex, allowColors, allowShadow, allowBasicFormatting, allowObfuscation, allowClickEvent, allowHoverEvent, allowRainbow;
     private boolean stripDisallowed;
+    private boolean replaceURL;
 
     public MiniMessageBuilder(String string) {
         this.string = string;
@@ -110,7 +111,12 @@ public class MiniMessageBuilder {
     }
 
     public MiniMessageBuilder allowAll() {
-        return allowAllEvents().allowAllColors().allowAllFormatting();
+        return allowAllEvents().allowAllColors().allowAllFormatting().replaceURL();
+    }
+
+    public MiniMessageBuilder replaceURL() {
+        this.replaceURL = true;
+        return this;
     }
 
     public Component build() {
@@ -170,7 +176,11 @@ public class MiniMessageBuilder {
         if (stripDisallowed) {
             message = MiniMessage.builder().tags(stripBuilder.build()).build().stripTags(message);
         }
-        return MiniMessage.builder().tags(parseBuilder.build()).build().deserialize(message);
+        Component out = MiniMessage.builder().tags(parseBuilder.build()).build().deserialize(message);
+        if (replaceURL) {
+            out = ComponentHelper.replaceURLs(out, true);
+        }
+        return out;
     }
 
     public String toPlainText() {

@@ -25,9 +25,18 @@ import static net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY;
 import static net.kyori.adventure.text.format.NamedTextColor.WHITE;
 
 public class ComponentHelper {
-    private static final Pattern HEX_PATTERN = Pattern.compile("&(#[a-fA-F0-9]{6})");
-    private static final Pattern COLOR_PATTERN = Pattern.compile("&(([a-fA-F0-9])|(#[a-fA-F0-9]{6}))");
-    private static final Pattern FORMAT_PATTERN = Pattern.compile("&([mnlokr])");
+    private static final String NEGATIVE_LOOKBEHIND_ESCAPE = "(?<!\\\\)";
+    private static final String HEX_PATTERN_BASE = "&(#[a-fA-F0-9]{6})";
+    private static final Pattern HEX_PATTERN = Pattern.compile(NEGATIVE_LOOKBEHIND_ESCAPE + HEX_PATTERN_BASE);
+    private static final Pattern HEX_PATTERN_ESCAPED = Pattern.compile("\\\\" + HEX_PATTERN_BASE);
+
+    private static final String COLOR_PATTERN_BASE = "&(?:(([a-fA-F0-9])|(#[a-fA-F0-9]{6})))";
+    private static final Pattern COLOR_PATTERN = Pattern.compile(NEGATIVE_LOOKBEHIND_ESCAPE + COLOR_PATTERN_BASE);
+    private static final Pattern COLOR_PATTERN_ESCAPED = Pattern.compile("\\\\" + COLOR_PATTERN_BASE);
+
+    private static final String FORMAT_PATTERN_BASE = "&([mnlokr])";
+    private static final Pattern FORMAT_PATTERN = Pattern.compile(NEGATIVE_LOOKBEHIND_ESCAPE + FORMAT_PATTERN_BASE);
+    private static final Pattern FORMAT_PATTERN_ESCAPED = Pattern.compile("\\\\" + FORMAT_PATTERN_BASE);
 
     @Deprecated
     public static Component text(Object text) {
@@ -78,10 +87,12 @@ public class ComponentHelper {
         return concat(text(left, surroundColor), content, text(right, surroundColor));
     }
 
+    @Deprecated
     public static void appendSpace(TextComponent.Builder builder) {
         builder.append(space());
     }
 
+    @Deprecated
     public static Component space() {
         return Component.text(" ");
     }
@@ -110,6 +121,7 @@ public class ComponentHelper {
         return strip(legacy(text));
     }
 
+    @Deprecated
     public static String toHex(Color color) {
         int r = color.getRed();
         int g = color.getGreen();
@@ -155,8 +167,15 @@ public class ComponentHelper {
         if (last < legacy.length()) {
             text.append(parseLegacyFormat(legacy.substring(last)));
         }
-        matcher = HEX_PATTERN.matcher(text);
-        return matcher.replaceAll(match -> "<" + match.group(1) + ">");
+        return removeEscapeCharacters(HEX_PATTERN.matcher(text).replaceAll(match -> "<" + match.group(1) + ">"), COLOR_PATTERN_ESCAPED, HEX_PATTERN_ESCAPED);
+    }
+
+    private static String removeEscapeCharacters(String string, Pattern... patterns) {
+        for (Pattern pattern : patterns) {
+            Matcher matcher = pattern.matcher(string);
+            string = matcher.replaceAll(match -> match.group().substring(1));
+        }
+        return string;
     }
 
     private static String parseLegacyFormat(String string) {
@@ -174,7 +193,7 @@ public class ComponentHelper {
         }
         string = FORMAT_PATTERN.matcher(string).replaceAll(match -> "<" + NamedTextColorChar.getByChar(match.group(1).charAt(0)).toString().toLowerCase() + ">");
         if (!containsReset) string += end;
-        return string;
+        return removeEscapeCharacters(string, FORMAT_PATTERN_ESCAPED);
     }
 
     @Deprecated
