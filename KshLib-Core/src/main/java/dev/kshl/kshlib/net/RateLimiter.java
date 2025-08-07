@@ -1,18 +1,22 @@
 package dev.kshl.kshlib.net;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class RateLimiter {
-    private final Map<String, Bucket> buckets = new HashMap<>();
+    public static final String GLOBAL_SENDER = "__global__";
+    private final Bucket globalBucket;
+    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
     private final int maxRequests;
     private final long window;
 
-    private long lastRefill = System.currentTimeMillis();
+    private long lastPurge = System.currentTimeMillis();
 
     public RateLimiter(int maxRequests, long window) {
         this.maxRequests = maxRequests;
         this.window = window;
+        this.globalBucket = new Bucket();
     }
 
     /**
@@ -21,22 +25,12 @@ public class RateLimiter {
      * @return Whether the request is within the rate limits
      */
     public boolean check(String sender) {
-        synchronized (buckets) {
-            refillBuckets();
-            return getBucket(sender).check();
+        Objects.requireNonNull(sender, "sender must be not null");
+        if (System.currentTimeMillis() - lastPurge > 1000) {
+            lastPurge = System.currentTimeMillis();
+            buckets.values().removeIf(Bucket::isStale);
         }
-    }
-
-    private void refillBuckets() {
-        synchronized (buckets) {
-            long time = System.currentTimeMillis();
-            long timeSinceRefill = time - lastRefill;
-            if (timeSinceRefill >= 10) {
-                lastRefill = time;
-                double add = getMaxRequests() / (double) getWindow() * timeSinceRefill;
-                buckets.values().removeIf(bucket -> bucket.addTokens(add) >= getMaxRequests());
-            }
-        }
+        return getBucket(sender).check();
     }
 
     /**
@@ -45,7 +39,7 @@ public class RateLimiter {
      * @return Whether the request is within the rate limits
      */
     public boolean checkGlobal() {
-        return check(null);
+        return check(GLOBAL_SENDER);
     }
 
     public int getMaxRequests() {
@@ -56,48 +50,84 @@ public class RateLimiter {
         return window;
     }
 
-    static class Bucket {
+    class Bucket {
         private long milliTokens;
+        private long lastRefill;
+        private long lastUse = System.currentTimeMillis();
 
-        public Bucket(long tokens) {
-            this.milliTokens = tokens * 1000L;
+        public Bucket() {
+            Bucket.this.reset();
         }
 
-        long addTokens(double add) {
-            this.milliTokens += Math.round(add * 1000);
-            return this.milliTokens / 1000L;
+        void reset() {
+            this.milliTokens = getMaxRequests() * 1000L;
+            this.lastRefill = System.currentTimeMillis();
+        }
+
+        private void refill() {
+            long time = System.currentTimeMillis();
+            long timeSinceRefill = time - lastRefill;
+            lastRefill = time;
+            if (timeSinceRefill > 0) {
+                double add = getMaxRequests() / (double) getWindow() * timeSinceRefill;
+                this.milliTokens += Math.round(add * 1000);
+
+                long milliTokenMax = getMaxRequests() * 1000L;
+                if (this.milliTokens > milliTokenMax) {
+                    this.milliTokens = milliTokenMax;
+                }
+            }
         }
 
         boolean check() {
-            if (this.milliTokens < 1000) return false;
-            this.milliTokens -= 1000;
-            return true;
+            synchronized (this) {
+                this.lastUse = System.currentTimeMillis();
+                refill();
+                if (this.milliTokens < 1000) return false;
+                this.milliTokens -= 1000;
+                return true;
+            }
+        }
+
+        boolean isStale() {
+            return System.currentTimeMillis() - lastUse > getWindow();
+        }
+
+        public long getTokens() {
+            return this.milliTokens / 1000;
         }
     }
 
     Bucket getBucket(String sender) {
-        synchronized (buckets) {
-            return buckets.computeIfAbsent(sender, o -> new Bucket(getMaxRequests()));
+        Objects.requireNonNull(sender, "sender must be not null");
+        if (isGlobal(sender)) {
+            return this.globalBucket;
         }
+        return buckets.computeIfAbsent(sender, s -> new Bucket());
     }
 
     /**
      * Clears all buckets
      */
     public void reset() {
-        synchronized (buckets) {
-            this.buckets.clear();
-            this.lastRefill = System.currentTimeMillis();
-        }
+        this.buckets.clear();
+        this.globalBucket.reset();
     }
 
     /**
      * Clears bucket for the specified user
      */
     public void reset(String sender) {
-        synchronized (buckets) {
+        Objects.requireNonNull(sender, "sender must be not null");
+        if (isGlobal(sender)) {
+            this.globalBucket.reset();
+        } else {
             this.buckets.remove(sender);
         }
+    }
+
+    private boolean isGlobal(String sender) {
+        return GLOBAL_SENDER.equals(sender);
     }
 
     public RateLimiter copy() {

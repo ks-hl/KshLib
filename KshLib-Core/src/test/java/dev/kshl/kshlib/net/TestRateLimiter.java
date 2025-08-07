@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestRateLimiter {
@@ -34,12 +35,12 @@ public class TestRateLimiter {
 
     @Test
     void allowsGlobalRequestsWithinLimit() {
-        assertAllowedNTimes(null, 5);
+        assertAllowedNTimes(RateLimiter.GLOBAL_SENDER, 5);
     }
 
     @Test
     void blocksGlobalRequestsOverLimit() {
-        assertAllowedNTimes(null, 5);
+        assertAllowedNTimes(RateLimiter.GLOBAL_SENDER, 5);
         assertFalse(rateLimiter.checkGlobal(), "6th global request should be blocked");
     }
 
@@ -135,6 +136,11 @@ public class TestRateLimiter {
         rateLimiter.reset(USER_A);
         assertTrue(rateLimiter.check(USER_A));
         assertFalse(rateLimiter.check(USER_B));
+    }
+
+    @Test
+    void nullSender() {
+        assertThrows(NullPointerException.class, () -> rateLimiter.check(null));
     }
 
     private void assertAllowedNTimes(String sender, int n) {
