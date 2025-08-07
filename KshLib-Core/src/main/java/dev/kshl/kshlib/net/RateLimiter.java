@@ -24,13 +24,10 @@ public class RateLimiter {
         if (timeSinceRefill >= 10) {
             lastRefill = System.currentTimeMillis();
             double add = getMaxRequests() / (double) getWindow() * timeSinceRefill;
-            buckets.values().forEach(bucket -> bucket.tokens += add);
+            buckets.values().forEach(bucket -> bucket.addTokens(add));
             buckets.values().removeIf(bucket -> bucket.tokens >= getMaxRequests());
         }
-        Bucket bucket = buckets.computeIfAbsent(sender, o -> new Bucket(getMaxRequests()));
-        if (bucket.tokens < 1) return false;
-        bucket.tokens--;
-        return true;
+        return buckets.computeIfAbsent(sender, o -> new Bucket(getMaxRequests())).check();
     }
 
     /**
@@ -51,10 +48,20 @@ public class RateLimiter {
     }
 
     private static class Bucket {
-        private double tokens;
+        private long tokens;
 
-        public Bucket(double tokens) {
-            this.tokens = tokens;
+        public Bucket(long tokens) {
+            this.tokens = tokens * 1000L;
+        }
+
+        void addTokens(double add) {
+            this.tokens += Math.round(add * 1000);
+        }
+
+        boolean check() {
+            if (this.tokens < 1000) return false;
+            this.tokens -= 1000;
+            return true;
         }
     }
 
