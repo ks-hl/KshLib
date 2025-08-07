@@ -3,95 +3,143 @@ package dev.kshl.kshlib.net;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestRateLimiter {
     private RateLimiter rateLimiter;
+    private static final String USER_A = "userA";
+    private static final String USER_B = "userB";
 
     @BeforeEach
     void setUp() {
-        rateLimiter = new RateLimiter(5,50);
+        rateLimiter = new RateLimiter(5, 50);
     }
 
     @Test
     void allowsRequestsWithinLimit() {
-        for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.check("user1"), "Request " + i + " should be allowed");
-        }
+        assertAllowedNTimes(USER_A, 5);
     }
 
     @Test
     void blocksRequestsOverLimit() {
-        for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.check("user2"), "Request " + i + " should be allowed");
-        }
-        assertFalse(rateLimiter.check("user2"), "6th request should be blocked");
+        assertAllowedNTimes(USER_A, 5);
+        assertFalse(rateLimiter.check(USER_A), "6th request should be blocked");
     }
 
     @Test
     void allowsGlobalRequestsWithinLimit() {
-        for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.checkGlobal(), "Global request " + i + " should be allowed");
-        }
+        assertAllowedNTimes(null, 5);
     }
 
     @Test
     void blocksGlobalRequestsOverLimit() {
-        for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.checkGlobal(), "Global request " + i + " should be allowed");
-        }
+        assertAllowedNTimes(null, 5);
         assertFalse(rateLimiter.checkGlobal(), "6th global request should be blocked");
     }
 
     @Test
-    void refillsTokensOverTime() throws InterruptedException {
-        for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.check("user3"), "Request " + i + " should be allowed");
-        }
-        assertFalse(rateLimiter.check("user3"), "6th request should be blocked");
+    void refillsTokensFully() throws InterruptedException {
+        assertAllowedNTimes(USER_A, 5);
+        assertFalse(rateLimiter.check(USER_A), "6th request should be blocked");
 
         // Wait enough for token refill
         Thread.sleep(60);
 
-        assertTrue(rateLimiter.check("user3"), "Request after refill should be allowed");
+        assertAllowedNTimes(USER_A, 5);
+        assertFalse(rateLimiter.check(USER_A), "6th request should be blocked");
+    }
+
+    @Test
+    void refillsTokensGradually() throws InterruptedException {
+        assertAllowedNTimes(USER_A, 1);
+
+        Thread.sleep(5);
+
+        assertAllowedNTimes(USER_A, 4);
+        assertFalse(rateLimiter.check(USER_A), "6th request should be blocked");
+
+        Thread.sleep(5); // Allow enough time for a single refill (5 + 5)
+
+        assertAllowedNTimes(USER_A, 1);
+        assertFalse(rateLimiter.check(USER_A), "Request should be blocked");
     }
 
     @Test
     void multipleUsersAreIsolated() {
-        for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.check("userA"), "userA request " + i + " should be allowed");
-            assertTrue(rateLimiter.check("userB"), "userB request " + i + " should be allowed");
-        }
+        assertAllowedNTimes(USER_A, 5);
+        assertAllowedNTimes(USER_B, 5);
     }
 
     @Test
     void refillDoesNotExceedMaxTokens() throws InterruptedException {
-        for (int i = 0; i < 5; i++) {
-            rateLimiter.check("user4"); // deplete
-        }
+        assertAllowedNTimes(USER_A, 5);
 
         Thread.sleep(100); // 2 refill times
 
         for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.check("user4"), "Request " + i + " should be allowed after refill");
+            assertTrue(rateLimiter.check(USER_A), "Request " + i + " should be allowed after refill");
         }
 
-        assertFalse(rateLimiter.check("user4"), "Extra request should still be blocked");
+        assertFalse(rateLimiter.check(USER_A), "Extra request should still be blocked");
     }
 
     @Test
-    void doesNotRefillImmediately() {
-        for (int i = 0; i < 5; i++) {
-            assertTrue(rateLimiter.check("user5"));
-        }
+    void doesNotRefillImmediately() throws InterruptedException {
+        assertAllowedNTimes(USER_A, 5);
 
         // Very short wait — should not trigger refill logic
-        try {
-            Thread.sleep(5);
-        } catch (InterruptedException ignored) {
-        }
+        Thread.sleep(5);
 
-        assertFalse(rateLimiter.check("user5"), "Should still be blocked (no refill yet)");
+        assertFalse(rateLimiter.check(USER_A), "Should still be blocked (no refill yet)");
+    }
+
+    @Test
+    void refillIsThreadSafe() throws ExecutionException, InterruptedException {
+        doRefillIsThreadSafe();
+        Thread.sleep(60);
+        doRefillIsThreadSafe();
+    }
+
+    private void doRefillIsThreadSafe() throws ExecutionException, InterruptedException {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            String user = "user" + i;
+            futures.add(CompletableFuture.supplyAsync(() -> {
+                assertAllowedNTimes(user, 5);
+                assertFalse(rateLimiter.check(user), user + "'s 6th attempt should be blocked.");
+                return null;
+            }));
+        }
+        for (CompletableFuture<Void> future : futures) {
+            future.get();
+        }
+    }
+
+    @Test
+    void resetAll() {
+        assertAllowedNTimes(USER_A, 5);
+        rateLimiter.reset();
+        assertAllowedNTimes(USER_A, 5);
+    }
+
+    @Test
+    void resetSingleUser() {
+        assertAllowedNTimes(USER_A, 5);
+        assertAllowedNTimes(USER_B, 5);
+        rateLimiter.reset(USER_A);
+        assertTrue(rateLimiter.check(USER_A));
+        assertFalse(rateLimiter.check(USER_B));
+    }
+
+    private void assertAllowedNTimes(String sender, int n) {
+        for (int i = 0; i < n; i++) {
+            assertTrue(rateLimiter.check(sender), sender + "'s request " + i + " should be allowed");
+        }
     }
 }

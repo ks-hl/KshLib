@@ -5,9 +5,10 @@ import java.util.Map;
 
 public class RateLimiter {
     private final Map<String, Bucket> buckets = new HashMap<>();
-    private long lastRefill;
     private final int maxRequests;
     private final long window;
+
+    private long lastRefill = System.currentTimeMillis();
 
     public RateLimiter(int maxRequests, long window) {
         this.maxRequests = maxRequests;
@@ -19,15 +20,23 @@ public class RateLimiter {
      *
      * @return Whether the request is within the rate limits
      */
-    public synchronized boolean check(String sender) {
-        long timeSinceRefill = System.currentTimeMillis() - lastRefill;
-        if (timeSinceRefill >= 10) {
-            lastRefill = System.currentTimeMillis();
-            double add = getMaxRequests() / (double) getWindow() * timeSinceRefill;
-            buckets.values().forEach(bucket -> bucket.addTokens(add));
-            buckets.values().removeIf(bucket -> bucket.getTokens() >= getMaxRequests());
+    public boolean check(String sender) {
+        synchronized (buckets) {
+            refillBuckets();
+            return getBucket(sender).check();
         }
-        return buckets.computeIfAbsent(sender, o -> new Bucket(getMaxRequests())).check();
+    }
+
+    private void refillBuckets() {
+        synchronized (buckets) {
+            long time = System.currentTimeMillis();
+            long timeSinceRefill = time - lastRefill;
+            if (timeSinceRefill >= 10) {
+                lastRefill = time;
+                double add = getMaxRequests() / (double) getWindow() * timeSinceRefill;
+                buckets.values().removeIf(bucket -> bucket.addTokens(add) >= getMaxRequests());
+            }
+        }
     }
 
     /**
@@ -47,15 +56,16 @@ public class RateLimiter {
         return window;
     }
 
-    private static class Bucket {
+    static class Bucket {
         private long milliTokens;
 
         public Bucket(long tokens) {
             this.milliTokens = tokens * 1000L;
         }
 
-        void addTokens(double add) {
+        long addTokens(double add) {
             this.milliTokens += Math.round(add * 1000);
+            return this.milliTokens / 1000L;
         }
 
         boolean check() {
@@ -63,9 +73,30 @@ public class RateLimiter {
             this.milliTokens -= 1000;
             return true;
         }
+    }
 
-        long getTokens() {
-            return milliTokens / 1000;
+    Bucket getBucket(String sender) {
+        synchronized (buckets) {
+            return buckets.computeIfAbsent(sender, o -> new Bucket(getMaxRequests()));
+        }
+    }
+
+    /**
+     * Clears all buckets
+     */
+    public void reset() {
+        synchronized (buckets) {
+            this.buckets.clear();
+            this.lastRefill = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * Clears bucket for the specified user
+     */
+    public void reset(String sender) {
+        synchronized (buckets) {
+            this.buckets.remove(sender);
         }
     }
 
