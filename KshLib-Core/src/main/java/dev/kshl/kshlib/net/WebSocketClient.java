@@ -5,17 +5,14 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.util.concurrent.CompletionStage;
 
-public abstract class WebSocketClient {
+public abstract class WebSocketClient implements WebSocket.Listener {
     private WebSocket webSocket;
 
     public WebSocketClient(String url) {
         HttpClient.newHttpClient()
                 .newWebSocketBuilder()
-                .buildAsync(URI.create(url), new ClientListener())
+                .buildAsync(URI.create(url), this)
                 .thenAccept(webSocket -> this.webSocket = webSocket);
-    }
-
-    protected void onOpen() {
     }
 
     protected abstract void onText(String data);
@@ -27,32 +24,23 @@ public abstract class WebSocketClient {
         webSocket.sendText(message, true);
     }
 
+    private StringBuilder textBuffer = new StringBuilder();
 
-    private class ClientListener implements WebSocket.Listener {
-        @Override
-        public void onOpen(WebSocket webSocket) {
-            WebSocketClient.this.onOpen();
-            WebSocket.Listener.super.onOpen(webSocket);
+    @Override
+    public final CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+        try {
+            handle(data, last);
+        } catch (Throwable t) {
+            System.out.println("Uncaught exception handling data: " + data);
+            t.printStackTrace();
         }
+        return WebSocket.Listener.super.onText(webSocket, data, last);
+    }
 
-        StringBuilder buffer = new StringBuilder();
-
-        @Override
-        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
-            try {
-                handle(data, last);
-            } catch (Throwable t) {
-                System.out.println(data);
-                t.printStackTrace();
-            }
-            return WebSocket.Listener.super.onText(webSocket, data, last);
-        }
-
-        private synchronized void handle(CharSequence data, boolean last) {
-            buffer.append(data);
-            if (!last) return;
-            WebSocketClient.this.onText(buffer.toString());
-            buffer = new StringBuilder();
-        }
+    private synchronized void handle(CharSequence data, boolean last) {
+        textBuffer.append(data);
+        if (!last) return;
+        WebSocketClient.this.onText(textBuffer.toString());
+        textBuffer = new StringBuilder();
     }
 }
