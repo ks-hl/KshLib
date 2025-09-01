@@ -1,14 +1,20 @@
 package dev.kshl.kshlib.net;
 
+import javax.annotation.Nullable;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public abstract class WebSocketClient implements WebSocket.Listener {
+    private final String url;
     private WebSocket webSocket;
 
     private StringBuilder textBuffer = new StringBuilder();
@@ -16,9 +22,26 @@ public abstract class WebSocketClient implements WebSocket.Listener {
     private int binaryBufferTotalBytes = 0;
 
     public WebSocketClient(String url) {
-        HttpClient.newHttpClient()
-                .newWebSocketBuilder()
-                .buildAsync(URI.create(url), this)
+        this.url = url;
+    }
+
+    public void connect(String... headers) {
+        if (headers.length % 2 != 0) {
+            throw new IllegalArgumentException("Invalid number of headers, must be an even number, got " + headers.length);
+        }
+        try {
+            close().get(1, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (TimeoutException | ExecutionException ignored) {
+        }
+
+        WebSocket.Builder builder = HttpClient.newHttpClient()
+                .newWebSocketBuilder();
+        for (int i = 0; i < headers.length; i += 2) {
+            builder.header(headers[i], headers[i + 1]);
+        }
+        builder.buildAsync(URI.create(url), this)
                 .thenAccept(webSocket -> this.webSocket = webSocket);
     }
 
@@ -26,7 +49,7 @@ public abstract class WebSocketClient implements WebSocket.Listener {
 
     protected void sendText(String message) {
         if (webSocket == null) {
-            throw new IllegalStateException("WebSocket not yet open");
+            throw new IllegalStateException("WebSocket not yet open", null);
         }
         webSocket.sendText(message, true);
     }
@@ -36,8 +59,7 @@ public abstract class WebSocketClient implements WebSocket.Listener {
         try {
             handle(data, last);
         } catch (Throwable t) {
-            System.out.println("Uncaught exception handling data: " + data);
-            t.printStackTrace();
+            print("Uncaught exception handling data: " + data, t);
         }
         return WebSocket.Listener.super.onText(webSocket, data, last);
     }
@@ -47,17 +69,25 @@ public abstract class WebSocketClient implements WebSocket.Listener {
         try {
             handle(data, last);
         } catch (Throwable t) {
-            System.out.println("Uncaught exception handling binary data");
-            t.printStackTrace();
         }
         return WebSocket.Listener.super.onBinary(webSocket, data, last);
+    }
+
+    public void print(String message, @Nullable Throwable t) {
+        System.out.println(message);
+        if (t != null) t.printStackTrace();
     }
 
     private synchronized void handle(CharSequence data, boolean last) {
         textBuffer.append(data);
         if (!last) return;
-        WebSocketClient.this.onText(textBuffer.toString());
+        String message = textBuffer.toString();
         textBuffer = new StringBuilder();
+        try {
+            WebSocketClient.this.onText(message);
+        } catch (Throwable t) {
+            print("Uncaught exception handling data: " + message, t);
+        }
     }
 
     private synchronized void handle(ByteBuffer data, boolean last) {
@@ -72,6 +102,12 @@ public abstract class WebSocketClient implements WebSocket.Listener {
         binaryBufferTotalBytes = 0;
         complete.flip();
         onBinary(complete);
+    }
+
+    public CompletableFuture<Void> close() {
+        if (webSocket == null || webSocket.isInputClosed() || webSocket.isOutputClosed()) return CompletableFuture.completedFuture(null);
+
+        return this.webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "Normal Closure").thenApply(w -> null);
     }
 
     protected void onBinary(ByteBuffer data) {
