@@ -7,9 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 public class BasicProfiler {
@@ -17,8 +16,8 @@ public class BasicProfiler {
     private final Thread watch;
     private final long life;
     private final Consumer<BasicProfiler> onStop;
-    private final CounterMap<StackTrace> counter = new CounterMap<>();
-    private ScheduledFuture<?> task;
+    private final Map<StackTrace, AtomicLong> counter = new HashMap<>();
+    private boolean running;
     private final Timer timer = new Timer("Profiler " + super.toString());
     private final AtomicInteger tickCount = new AtomicInteger();
 
@@ -41,29 +40,34 @@ public class BasicProfiler {
     }
 
     public synchronized void start() {
-        if (task != null) throw new IllegalStateException("Profiler already running");
+        if (running) throw new IllegalStateException("Profiler already running");
         timer.reset();
         tickCount.set(0);
-        task = executor.scheduleAtFixedRate(() -> {
-            tickCount.incrementAndGet();
-            synchronized (counter) {
-                counter.increment(new StackTrace(watch.getStackTrace()));
-                if (task != null && timer.getMillis() > life) {
-                    stop();
+        running = true;
+        new Thread(() -> {
+            long lastTick = System.nanoTime();
+            while (running) {
+                long thisTick = System.nanoTime();
+                tickCount.incrementAndGet();
+                synchronized (counter) {
+                    counter.computeIfAbsent(new StackTrace(watch.getStackTrace()), s -> new AtomicLong()).addAndGet(thisTick - lastTick);
+                    lastTick = thisTick;
+                    if (running && timer.getMillis() > life) {
+                        stop();
+                    }
                 }
             }
-        }, 50, 50, TimeUnit.MICROSECONDS);
+        }).start();
     }
 
     public synchronized void stop() {
-        if (task == null) throw new IllegalStateException("Profiler not running");
-        task.cancel(false);
+        if (!running) throw new IllegalStateException("Profiler not running");
+        running = false;
         timer.pause();
         if (onStop != null) onStop.accept(this);
-        task = null;
     }
 
-    public synchronized Map<StackTrace, Integer> getCountMap() {
+    public synchronized Map<StackTrace, AtomicLong> getCountMap() {
         synchronized (counter) {
             return new HashMap<>(counter);
         }
@@ -95,15 +99,16 @@ public class BasicProfiler {
     public String toString(double minimumThreshold) {
         double count = getTickCount();
         StringBuilder out = new StringBuilder("Profiler results: \nRan for: " + getRuntimeMillis() + "ms, sampled " + (int) count + " times");
-        double runtime = getRuntimeMillis();
-        List<Map.Entry<StackTrace, Integer>> map = new ArrayList<>(getCountMap().entrySet());
-        map.sort(Comparator.comparingInt(Map.Entry::getValue));
-        for (Map.Entry<StackTrace, Integer> entry : map) {
-            double factor = entry.getValue() / count;
+        double totalRuntime = getRuntimeMillis();
+        List<Map.Entry<StackTrace, AtomicLong>> map = new ArrayList<>(getCountMap().entrySet());
+        map.sort(Comparator.comparingLong(e -> e.getValue().get()));
+        for (Map.Entry<StackTrace, AtomicLong> entry : map) {
+            long stackRuntime = entry.getValue().get();
+            double factor = stackRuntime / totalRuntime;
             if (factor < minimumThreshold) continue;
             String toString = entry.getKey().toString(factor <= minimumThreshold * 0.01 ? 5 : 0);
             if (factor <= minimumThreshold * 0.01) toString = toString.trim();
-            out.append("\nSeen ").append(entry.getValue()).append(" times, ").append(Math.round(factor * runtime * 10) / 10d).append("ms, ").append(Math.round(factor * 1000) / 10d).append("%");
+            out.append(Math.round(stackRuntime / 1E5D) / 10d).append("ms, ").append(Math.round(factor * 1000) / 10d).append("%");
             out.append(toString);
             out.append("\n============\n");
         }
