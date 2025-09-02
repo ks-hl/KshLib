@@ -18,12 +18,14 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -305,6 +307,20 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
                 prepare(connection, pstmt, args);
                 return function.apply(pstmt);
             }
+        }, wait);
+    }
+
+    public <T> void executeBatch(String statement, Collection<T> collection, List<Function<T, Object>> valueFunctions, long wait) throws SQLException, BusyException {
+        execute(connection -> {
+            execute(connection, statement, ps -> {
+                for (T element : collection) {
+                    for (int i = 0; i < valueFunctions.size(); i++) {
+                        Object value = valueFunctions.get(i).apply(element);
+                        prepare(connection, ps, i + 1, value);
+                    }
+                    ps.addBatch();
+                }
+            });
         }, wait);
     }
 
