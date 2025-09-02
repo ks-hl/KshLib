@@ -41,8 +41,7 @@ public abstract class SQLIDManager<V> {
                         "AND TABLE_SCHEMA = DATABASE()";
                 ResultSet rs = stmt.executeQuery(query);
                 while (rs.next()) {
-                    String constraintType = rs.getString("CONSTRAINT_TYPE");
-                    if ("UNIQUE".equalsIgnoreCase(constraintType)) {
+                    if ("UNIQUE".equalsIgnoreCase(rs.getString("CONSTRAINT_TYPE"))) {
                         return false;
                     }
                 }
@@ -62,9 +61,9 @@ public abstract class SQLIDManager<V> {
     public void init(Connection connection) throws SQLException {
         if (initDone) throw new IllegalStateException("Initialization is already complete.");
 
-        boolean needsMigration = needsMigration(connection);
+        boolean migrationRequired = needsMigration(connection);
 
-        if (needsMigration) {
+        if (migrationRequired) {
             System.out.println("Migrating ID table `" + table + "` to add unique constraint");
             sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
             sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
@@ -77,7 +76,7 @@ public abstract class SQLIDManager<V> {
         else statement += ", UNIQUE(value))";
         sql.execute(connection, statement);
 
-        if (needsMigration) {
+        if (migrationRequired) {
             sql.query(connection, "SELECT id,value FROM " + table + "_temp ORDER BY id ASC", rs -> {
                 while (rs.next()) {
                     V value = getValue(rs, 2);
@@ -96,6 +95,7 @@ public abstract class SQLIDManager<V> {
 
         initDone = true;
     }
+
 
     public int getIDOrInsert(V value) throws SQLException, BusyException {
         return getIDOpt(value, true).orElseThrow();
