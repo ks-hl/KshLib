@@ -30,34 +30,44 @@ public abstract class SQLIDManager<V> {
         this.table = table;
     }
 
-    public void init(Connection connection) throws SQLException {
-        if (initDone) throw new IllegalStateException("Initialization is already complete.");
+    private boolean needsMigration(Connection connection) throws SQLException {
+        if (!sql.tableExists(connection, table)) return false;
 
-        boolean hasUniqueConstraint = true;
-        if (sql.tableExists(connection, table)) {
-            try (Statement stmt = connection.createStatement()) {
-                hasUniqueConstraint = false;
-                if (sql.isMySQL()) {
-                    String query = "SELECT * FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_NAME = '" + table + "'";
-                    ResultSet rs = stmt.executeQuery(query);
-
-                    if (rs.next()) {
-                        String constraintType = rs.getString("CONSTRAINT_TYPE");
-                        hasUniqueConstraint = "UNIQUE".equals(constraintType);
+        try (Statement stmt = connection.createStatement()) {
+            if (sql.isMySQL()) {
+                String query = "SELECT CONSTRAINT_TYPE " +
+                        "FROM information_schema.TABLE_CONSTRAINTS " +
+                        "WHERE TABLE_NAME = '" + table + "' " +
+                        "AND TABLE_SCHEMA = DATABASE()";
+                ResultSet rs = stmt.executeQuery(query);
+                while (rs.next()) {
+                    String constraintType = rs.getString("CONSTRAINT_TYPE");
+                    if ("UNIQUE".equalsIgnoreCase(constraintType)) {
+                        return false;
                     }
-                } else {
-                    String query = "PRAGMA index_list(" + table + ");";
-                    ResultSet rs = stmt.executeQuery(query);
-                    if (rs.next()) {
-                        hasUniqueConstraint = rs.getBoolean("unique");
+                }
+            } else {
+                String query = "PRAGMA index_list(" + table + ")";
+                ResultSet rs = stmt.executeQuery(query);
+                while (rs.next()) {
+                    if (rs.getBoolean("unique")) {
+                        return false;
                     }
                 }
             }
-            if (!hasUniqueConstraint) {
-                System.out.println("Migrating ID table `" + table + "` to add unique constraint");
-                sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
-                sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
-            }
+        }
+        return true;
+    }
+
+    public void init(Connection connection) throws SQLException {
+        if (initDone) throw new IllegalStateException("Initialization is already complete.");
+
+        boolean needsMigration = needsMigration(connection);
+
+        if (needsMigration) {
+            System.out.println("Migrating ID table `" + table + "` to add unique constraint");
+            sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
+            sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
         }
 
         String statement = "CREATE TABLE IF NOT EXISTS " + table + " (value " + datatype;
@@ -67,7 +77,7 @@ public abstract class SQLIDManager<V> {
         else statement += ", UNIQUE(value))";
         sql.execute(connection, statement);
 
-        if (!hasUniqueConstraint) {
+        if (needsMigration) {
             sql.query(connection, "SELECT id,value FROM " + table + "_temp ORDER BY id ASC", rs -> {
                 while (rs.next()) {
                     V value = getValue(rs, 2);
@@ -76,7 +86,7 @@ public abstract class SQLIDManager<V> {
                         sql.execute(connection, "INSERT INTO " + table + " (id,value) VALUES (?,?)", id, value);
                     } catch (SQLException e) {
                         if (ConnectionManager.isConstraintViolation(e)) {
-                            System.err.println("Found duplicate ID `" + id + "` for value`" + value + "` in table " + table);
+                            System.err.println("Found duplicate ID `" + id + "` for value `" + value + "` in table " + table);
                         }
                     }
                 }
@@ -87,13 +97,12 @@ public abstract class SQLIDManager<V> {
         initDone = true;
     }
 
-    @Deprecated
-    public int getID(V value, boolean insert) throws SQLException, BusyException {
-        return getIDOpt(value, insert, false).orElse(-1);
-    }
-
     public int getIDOrInsert(V value) throws SQLException, BusyException {
         return getIDOpt(value, true).orElseThrow();
+    }
+
+    public int getIDOrInsert(Connection connection, V value) throws SQLException, BusyException {
+        return getIDOpt(connection, value, true, false).orElseThrow();
     }
 
     public Optional<Integer> getIDOpt(V value, boolean insert) throws SQLException, BusyException {
@@ -101,6 +110,10 @@ public abstract class SQLIDManager<V> {
     }
 
     private Optional<Integer> getIDOpt(V value, boolean insert, boolean requireNew) throws SQLException, BusyException {
+        return sql.execute((ConnectionFunction<Optional<Integer>>) connection -> getIDOpt(connection, value, insert, requireNew), 10000L);
+    }
+
+    private Optional<Integer> getIDOpt(Connection connection, V value, boolean insert, boolean requireNew) throws SQLException, BusyException {
         if (!initDone) throw new IllegalStateException("Initialization is not complete.");
         if (value == null || isInvalid(value)) return Optional.empty();
 
@@ -116,10 +129,11 @@ public abstract class SQLIDManager<V> {
 
         for (int i = 0; i < 30; i++) {
             try {
-                return sql.executeTransaction(connection -> {
+                return sql.executeTransaction(connection, () -> {
                     try {
-                        if (insert)
+                        if (insert) {
                             sql.execute(connection, "INSERT INTO " + table + " (value) VALUES (?)", toDatabaseObject(value));
+                        }
                     } catch (SQLException e) {
                         if (requireNew || !ConnectionManager.isConstraintViolation(e)) throw e;
                     }
@@ -129,12 +143,18 @@ public abstract class SQLIDManager<V> {
                         cache(result, value);
                         return Optional.of(result);
                     }, toDatabaseObject(value));
-                }, 10000L);
+                });
             } catch (SQLException e) {
-                if (e.getErrorCode() != 1213 /* DEADLOCK */) throw e;
+                int code = e.getErrorCode();
+                String state = e.getSQLState();
+                // Handle MySQL deadlock and lock wait timeout
+                if (code == 1213 || code == 1205) continue;
+                // Handle SQLite busy/locked
+                if ("40001".equals(state) || "HY000".equals(state)) continue;
+                throw e;
             }
         }
-        throw new BusyException("Unable to get UID due to likely deadlock");
+        throw new BusyException("Unable to get UID due to repeated deadlocks or timeouts");
     }
 
     public int getIDRequireNew(V value) throws SQLException, BusyException {
@@ -166,8 +186,8 @@ public abstract class SQLIDManager<V> {
     /**
      * Forces the provided uid/value pair into the database. This should really only be used for migrations or testing. Otherwise use {@link #getIDOpt(Object, boolean)}
      */
-    public void put(int uid, V value) throws SQLException, BusyException {
-        sql.execute("INSERT INTO " + table + " (uid,value) VALUES (?,?)", 3000L, uid, toDatabaseObject(value));
+    public void put(int id, V value) throws SQLException, BusyException {
+        sql.execute("INSERT INTO " + table + " (id,value) VALUES (?,?)", 3000L, id, toDatabaseObject(value));
     }
 
     @Nullable
@@ -206,8 +226,8 @@ public abstract class SQLIDManager<V> {
         return getValueOpt(id).orElseThrow(() -> new IllegalArgumentException("Value not found for ID " + id));
     }
 
-    public boolean remove(int uid) throws SQLException, BusyException {
-        return sql.executeReturnRows("DELETE FROM " + table + " WHERE uid=?", 10000L, uid) > 0;
+    public boolean remove(int id) throws SQLException, BusyException {
+        return sql.executeReturnRows("DELETE FROM " + table + " WHERE id=?", 10000L, id) > 0;
     }
 
     public String getTableName() {

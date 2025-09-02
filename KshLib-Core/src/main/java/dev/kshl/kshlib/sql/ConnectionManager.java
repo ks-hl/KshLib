@@ -31,6 +31,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     private final ConnectionPool connectionPool;
     private boolean closed;
     private boolean ready;
+    private boolean shuttingDown;
 
     @SuppressWarnings("unused")
     public ConnectionManager(File sqliteFile) throws IOException, SQLException, ClassNotFoundException {
@@ -545,6 +546,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     protected abstract boolean checkAsync();
 
     private void checkAsync_() throws IllegalStateException {
+        if (shuttingDown) return;
         if (checkAsync()) return;
         throw new IllegalStateException("Synchronous call to database.");
     }
@@ -601,5 +603,12 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     @Override
     public String toString() {
         return String.format("ConnectionManager[type=%s,ready=%s,closed=%s]", isMySQL() ? "mysql" : "sqlite", isReady(), closed);
+    }
+
+    /**
+     * Allows Synchronous calls to the database to allow for shutdown tasks
+     */
+    public void markAsShuttingDown() {
+        shuttingDown = true;
     }
 }
