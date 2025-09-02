@@ -20,6 +20,11 @@ public class BiDiHashMap<K, V> {
         reverse = new HashMap<>();
     }
 
+    public BiDiHashMap(Map<K, V> map) {
+        this();
+        putAll(map);
+    }
+
     public synchronized void clear() {
         forward.clear();
         reverse.clear();
@@ -50,6 +55,10 @@ public class BiDiHashMap<K, V> {
             return set;
         });
         return removed;
+    }
+
+    public void putAll(Map<K, V> map) {
+        map.forEach(this::put);
     }
 
     public synchronized V get(K key) {
