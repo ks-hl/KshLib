@@ -121,7 +121,7 @@ public class DatabaseManagerTest {
 
         connectionManager.executeBatch("INSERT INTO test (a,b) VALUES (?,?)",
                 List.of(new int[]{1, 2}, new int[]{3, 4}),
-                List.of(i -> i[0], i -> i[1]),
+                i -> List.of(i[0], i[1]),
                 3000L
         );
         connectionManager.query("SELECT * FROM test", rs -> {
@@ -137,7 +137,7 @@ public class DatabaseManagerTest {
         // Batch switch the values
         connectionManager.executeBatch("UPDATE test SET a=?, b=? WHERE a=? AND b=?",
                 List.of(new int[]{1, 2}, new int[]{3, 4}),
-                List.of(i -> i[1], i -> i[0], i -> i[0], i -> i[1]),
+                i -> List.of(i[1], i[0], i[0], i[1]),
                 3000L
         );
         connectionManager.query("SELECT * FROM test", rs -> {

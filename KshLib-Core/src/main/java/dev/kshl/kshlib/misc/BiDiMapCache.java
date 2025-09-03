@@ -49,8 +49,9 @@ public class BiDiMapCache<K, V> extends MapCache<K, V> {
         return newVal;
     }
 
-    protected final List<V> actuallyCleanup() {
-        super.actuallyCleanup().forEach(reverse::remove);
+    @Override
+    protected final List<V> cleanup() {
+        super.cleanup().forEach(reverse::remove);
         return null;
     }
 }

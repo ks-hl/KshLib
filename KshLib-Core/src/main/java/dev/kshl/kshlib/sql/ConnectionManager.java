@@ -2,6 +2,7 @@ package dev.kshl.kshlib.sql;
 
 import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ThrowingFunction;
 import dev.kshl.kshlib.function.ThrowingRunnable;
 import dev.kshl.kshlib.function.ThrowingSupplier;
 import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
@@ -25,7 +26,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -310,18 +310,21 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }, wait);
     }
 
-    public <T> void executeBatch(String statement, Collection<T> collection, List<Function<T, Object>> valueFunctions, long wait) throws SQLException, BusyException {
-        execute(connection -> {
-            execute(connection, statement, ps -> {
-                for (T element : collection) {
-                    for (int i = 0; i < valueFunctions.size(); i++) {
-                        Object value = valueFunctions.get(i).apply(element);
-                        prepare(connection, ps, i + 1, value);
-                    }
-                    ps.addBatch();
+    public <T> void executeBatch(String statement, Collection<T> collection, ThrowingFunction<T, List<?>, SQLException> valueFunction, long wait) throws SQLException, BusyException {
+        execute((ConnectionConsumer) connection -> executeBatch(connection, statement, collection, valueFunction), wait);
+    }
+
+    public <T> void executeBatch(Connection connection, String statement, Collection<T> collection, ThrowingFunction<T, List<?>, SQLException> valueFunction) throws SQLException {
+        execute(connection, statement, ps -> {
+            for (T element : collection) {
+                List<?> values = valueFunction.apply(element);
+                for (int i = 0; i < values.size(); i++) {
+                    Object value = values.get(i);
+                    prepare(connection, ps, i + 1, value);
                 }
-            });
-        }, wait);
+                ps.addBatch();
+            }
+        });
     }
 
     //
@@ -626,5 +629,13 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      */
     public void markAsShuttingDown() {
         shuttingDown = true;
+    }
+
+    /**
+     * The ratio of time this pool has been actively accessing the database in the past [5 minutes], [1 minute], and [5 seconds]
+     * Note: This may be >1 if there are multiple Connections
+     */
+    public double[] getUsageTimeRatios() {
+        return connectionPool.getUsageTimeRatios();
     }
 }

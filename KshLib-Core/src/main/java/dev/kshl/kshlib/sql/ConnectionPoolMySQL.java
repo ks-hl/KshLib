@@ -52,7 +52,7 @@ public class ConnectionPoolMySQL extends ConnectionPool {
     }
 
     @Override
-    public <T> T executeWithException(ConnectionFunctionWithException<T> connectionFunction, long wait) throws Exception {
+    protected <T> T executeWithException_(ConnectionFunctionWithException<T> connectionFunction, long wait) throws Exception {
         if (isClosing()) {
             throw new BusyException("Database closing");
         }

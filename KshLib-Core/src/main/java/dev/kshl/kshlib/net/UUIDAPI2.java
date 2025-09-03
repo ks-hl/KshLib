@@ -26,7 +26,6 @@ public class UUIDAPI2 {
 
     @Nullable
     public NameUUID getUUIDAndNameFromUsername(String username) throws IOException, BusyException {
-        cache.cleanup();
         UUID out = cache.get(username);
         if (out != null) return new NameUUID(cache.getKey(out), out);
         NameUUID nameUUID;
@@ -42,7 +41,6 @@ public class UUIDAPI2 {
 
     @Nullable
     public String getUsernameFromUUID(UUID uuid) throws IOException, BusyException {
-        cache.cleanup();
         String name = cache.getKey(uuid);
         if (name != null) return name;
         if (uuid.getMostSignificantBits() == 0) {

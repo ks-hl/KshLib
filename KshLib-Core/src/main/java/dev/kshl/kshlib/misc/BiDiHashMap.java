@@ -41,7 +41,7 @@ public class BiDiHashMap<K, V> {
     }
 
     public synchronized Set<K> getKey(V value) {
-        return reverse.get(value);
+        return reverse.getOrDefault(value, Set.of());
     }
 
     public synchronized V put(K key, V value) {

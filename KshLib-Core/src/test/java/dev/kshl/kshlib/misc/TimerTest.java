@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class TimerTest {
     @Test
     public void testTimer() throws InterruptedException {
-        Timer timer = new Timer("test", 1);
+        Timer timer = new Timer("test");
         long start = System.currentTimeMillis();
         Thread.sleep(20);
         timer.pause();

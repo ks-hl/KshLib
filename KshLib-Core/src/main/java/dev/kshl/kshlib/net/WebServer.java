@@ -132,7 +132,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     public final void handle(HttpExchange t) {
         final long requestTime = System.currentTimeMillis();
 
-        Timer timer = new Timer(1);
+        Timer timer = new Timer();
         String sender = null;
         String endpoint = null;
         try {

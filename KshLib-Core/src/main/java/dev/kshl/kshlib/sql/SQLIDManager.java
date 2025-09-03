@@ -101,7 +101,7 @@ public abstract class SQLIDManager<V> {
         return getIDOpt(value, true).orElseThrow();
     }
 
-    public int getIDOrInsert(Connection connection, V value) throws SQLException, BusyException {
+    public int getIDOrInsert(Connection connection, V value) throws SQLException {
         return getIDOpt(connection, value, true, false).orElseThrow();
     }
 
@@ -113,7 +113,7 @@ public abstract class SQLIDManager<V> {
         return sql.execute((ConnectionFunction<Optional<Integer>>) connection -> getIDOpt(connection, value, insert, requireNew), 10000L);
     }
 
-    private Optional<Integer> getIDOpt(Connection connection, V value, boolean insert, boolean requireNew) throws SQLException, BusyException {
+    private Optional<Integer> getIDOpt(Connection connection, V value, boolean insert, boolean requireNew) throws SQLException {
         if (!initDone) throw new IllegalStateException("Initialization is not complete.");
         if (value == null || isInvalid(value)) return Optional.empty();
 
@@ -154,7 +154,7 @@ public abstract class SQLIDManager<V> {
                 throw e;
             }
         }
-        throw new BusyException("Unable to get UID due to repeated deadlocks or timeouts");
+        throw new SQLException("Unable to get UID due to repeated deadlocks or timeouts");
     }
 
     public int getIDRequireNew(V value) throws SQLException, BusyException {

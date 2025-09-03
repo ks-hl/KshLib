@@ -2,28 +2,27 @@ package dev.kshl.kshlib.misc;
 
 public class Timer {
     private final String name;
-    private final double oom;
     private long start;
     private long paused;
     private long pausedFor;
 
     public Timer() {
-        this(null);
+        this(true);
+    }
+
+    public Timer(boolean startRunning) {
+        this(null, startRunning);
     }
 
     public Timer(String name) {
-        this(name, 1);
+        this(name, true);
     }
 
-    public Timer(int oom) {
-        this(null, oom);
-    }
-
-    public Timer(String name, int oom) {
+    public Timer(String name, boolean startRunning) {
         this.name = name;
-        this.oom = Math.pow(10, oom);
-
-        start = System.nanoTime();
+        if (startRunning) {
+            start = System.nanoTime();
+        }
     }
 
     public void resume() {
@@ -50,7 +49,7 @@ public class Timer {
 
     @Override
     public String toString() {
-        return (name == null ? "" : (name + ": ")) + Math.round(getMillis() * oom) / oom + "ms";
+        return (name == null ? "" : (name + ": ")) + Formatter.toString(getMillis(), 2, true, true) + "ms";
     }
 
     public double getMillis() {

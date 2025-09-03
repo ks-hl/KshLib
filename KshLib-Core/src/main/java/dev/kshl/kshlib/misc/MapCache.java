@@ -1,40 +1,42 @@
 package dev.kshl.kshlib.misc;
 
 import javax.annotation.Nonnull;
-
 import javax.annotation.OverridingMethodsMustInvokeSuper;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 public class MapCache<K, V> extends HashMap<K, V> {
+    private static final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
 
     protected final long timeToLive;
     protected final long cleanupInterval;
     protected final boolean updateWhenAccessed;
-    private final HashMap<K, V> forward;
-    private final HashMap<Object, Long> timeAdded;
-    private long lastCleanup;
+    private final HashMap<K, V> forward = new HashMap<>();
+    private final ArrayDeque<Pair<Object, Long>> timeAddedQueue = new ArrayDeque<>();
+    private final Map<Object, Long> trueTimeAdded = new HashMap<>();
 
     public MapCache(long timeToLive, long cleanupInterval, boolean updateWhenAccessed) {
-        forward = new HashMap<>();
-        timeAdded = new HashMap<>();
         this.timeToLive = timeToLive;
         this.cleanupInterval = cleanupInterval;
-        this.lastCleanup = System.currentTimeMillis();
         this.updateWhenAccessed = updateWhenAccessed;
+        executor.scheduleAtFixedRate(this::cleanup, cleanupInterval, cleanupInterval, TimeUnit.MILLISECONDS);
     }
 
     @Override
     @OverridingMethodsMustInvokeSuper
     public void clear() {
         forward.clear();
-        timeAdded.clear();
-        this.lastCleanup = System.currentTimeMillis();
+        timeAddedQueue.clear();
+        trueTimeAdded.clear();
     }
 
     @Nonnull
@@ -71,24 +73,28 @@ public class MapCache<K, V> extends HashMap<K, V> {
         }
 
         if (updateWhenAccessed) {
-            timeAdded.put(key, System.currentTimeMillis());
+            touch(key);
         }
         return value;
+    }
+
+    protected final void touch(Object key) {
+        long expiration = System.currentTimeMillis() + timeToLive;
+        timeAddedQueue.add(new Pair<>(key, expiration));
+        trueTimeAdded.put(key, expiration);
     }
 
     @Override
     @OverridingMethodsMustInvokeSuper
     public V put(K key, V value) {
-        cleanup();
-        timeAdded.put(key, System.currentTimeMillis());
+        touch(key);
         return forward.put(key, value);
     }
 
     @Override
     @OverridingMethodsMustInvokeSuper
     public V remove(Object key) {
-        cleanup();
-        timeAdded.remove(key);
+        trueTimeAdded.remove(key);
         return forward.remove(key);
     }
 
@@ -121,28 +127,19 @@ public class MapCache<K, V> extends HashMap<K, V> {
         return forward.values();
     }
 
-    public final void cleanup() {
-        if (System.currentTimeMillis() - lastCleanup > cleanupInterval) {
-            actuallyCleanup();
-            lastCleanup = System.currentTimeMillis();
-        }
-    }
-
     @OverridingMethodsMustInvokeSuper
-    protected List<V> actuallyCleanup() {
-        final long cutoff = System.currentTimeMillis() - timeToLive;
-
-        ArrayList<Object> cleanup = new ArrayList<>();
-        for (Entry<Object, Long> entry : timeAdded.entrySet()) {
-            if (entry.getValue() < cutoff) {
-                cleanup.add(entry.getKey());
-            }
-        }
+    protected List<V> cleanup() {
+        final long currentTime = System.currentTimeMillis();
         List<V> removed = new ArrayList<>();
-        for (Object key : cleanup) {
-            timeAdded.remove(key);
-            //noinspection SuspiciousMethodCalls
-            removed.add(forward.remove(key));
+
+        Pair<Object, Long> element;
+        while ((element = timeAddedQueue.peek()) != null) {
+            if (currentTime >= element.getValue()) timeAddedQueue.poll();
+            else break;
+            Long trueExpiration = trueTimeAdded.get(element.getKey());
+            if (trueExpiration != null && currentTime >= trueExpiration) {
+                removed.add(remove(element.getKey()));
+            }
         }
         return removed;
     }
@@ -151,9 +148,5 @@ public class MapCache<K, V> extends HashMap<K, V> {
     public final boolean isEmpty() {
         cleanup();
         return forward.isEmpty();
-    }
-
-    protected final void touch(K key) {
-        timeAdded.put(key, System.currentTimeMillis());
     }
 }
