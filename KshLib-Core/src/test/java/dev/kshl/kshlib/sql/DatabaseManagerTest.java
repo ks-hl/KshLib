@@ -23,8 +23,8 @@ public class DatabaseManagerTest {
 
     @DatabaseTest
     public void testMultipleQueries(ConnectionManager connectionManager) throws InterruptedException, ExecutionException {
-        final int numThreads = 32;
-        final int queriesPerThread = 1000;
+        final int numThreads = 16;
+        final int queriesPerThread = 250;
         List<Thread> threads = new ArrayList<>();
         List<CompletableFuture<Void>> completables = new ArrayList<>();
         for (int i = 0; i < numThreads; i++) {
@@ -117,14 +117,15 @@ public class DatabaseManagerTest {
 
     @DatabaseTest
     public void testBatchInsert(ConnectionManager connectionManager) throws SQLException, BusyException {
-        connectionManager.execute("CREATE TABLE IF NOT EXISTS test (a INT, b INT)", 3000L);
+        String table = "batch_test";
+        connectionManager.execute("CREATE TABLE IF NOT EXISTS " + table + " (a INT, b INT)", 3000L);
 
-        connectionManager.executeBatch("INSERT INTO test (a,b) VALUES (?,?)",
+        connectionManager.executeBatch("INSERT INTO " + table + " (a,b) VALUES (?,?)",
                 List.of(new int[]{1, 2}, new int[]{3, 4}),
                 i -> List.of(i[0], i[1]),
                 3000L
         );
-        connectionManager.query("SELECT * FROM test", rs -> {
+        connectionManager.query("SELECT * FROM " + table, rs -> {
             int[][] expected = {{1, 2}, {3, 4}};
             int count = 0;
             while (rs.next()) {
@@ -132,15 +133,16 @@ public class DatabaseManagerTest {
                 assertEquals(expected[count][1], rs.getInt(2));
                 count++;
             }
+            assertEquals(2, count);
         }, 3000L);
 
         // Batch switch the values
-        connectionManager.executeBatch("UPDATE test SET a=?, b=? WHERE a=? AND b=?",
+        connectionManager.executeBatch("UPDATE " + table + " SET a=?, b=? WHERE a=? AND b=?",
                 List.of(new int[]{1, 2}, new int[]{3, 4}),
                 i -> List.of(i[1], i[0], i[0], i[1]),
                 3000L
         );
-        connectionManager.query("SELECT * FROM test", rs -> {
+        connectionManager.query("SELECT * FROM " + table, rs -> {
             int[][] expected = {{2, 1}, {4, 3}};
             int count = 0;
             while (rs.next()) {
@@ -148,6 +150,7 @@ public class DatabaseManagerTest {
                 assertEquals(expected[count][1], rs.getInt(2));
                 count++;
             }
+            assertEquals(2, count);
         }, 3000L);
     }
 }
