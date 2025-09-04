@@ -324,6 +324,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
                 }
                 ps.addBatch();
             }
+            ps.executeBatch();
         });
     }
 
