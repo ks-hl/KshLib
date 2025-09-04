@@ -1,40 +1,47 @@
 package dev.kshl.kshlib.misc;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.Objects;
 
-public class Pair<K, V> implements Cloneable {
-    private final K k;
-    private final V v;
+@Setter
+@Getter
+public class Pair<K, V> {
+    private K left;
+    private V right;
 
-    public Pair(K k, V v) {
-        this.k = k;
-        this.v = v;
+    public Pair(K left, V right) {
+        this.left = left;
+        this.right = right;
     }
 
+    @Deprecated
     public K getKey() {
-        return k;
+        return left;
     }
 
+    @Deprecated
     public V getValue() {
-        return v;
+        return right;
     }
 
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;
         if (!(other instanceof Pair<?, ?> pair)) return false;
-        return Objects.equals(k, pair.k) && Objects.equals(v, pair.v);
+        return Objects.equals(left, pair.left) && Objects.equals(right, pair.right);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(k, v);
+        return Objects.hash(left, right);
     }
 
     /**
      * Creates a new {@link Pair} with the same key and value
      */
     public Pair<K, V> copy() {
-        return new Pair<>(getKey(), getValue());
+        return new Pair<>(getLeft(), getRight());
     }
 }

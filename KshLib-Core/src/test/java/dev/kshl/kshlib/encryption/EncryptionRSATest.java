@@ -4,7 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.security.GeneralSecurityException;
+import java.util.Random;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -13,7 +16,7 @@ public class EncryptionRSATest {
     private EncryptionRSA.RSAPair keyPair;
     private EncryptionRSA publicKey;
     private EncryptionRSA privateKey;
-    private final byte[] message = "TLS certificate fingerprint".getBytes();
+    private final byte[] message = CodeGenerator.generateSecret(512, true, false, false, false).getBytes();
 
     @BeforeEach
     public void setUp() {
@@ -57,13 +60,29 @@ public class EncryptionRSATest {
     public void testSignFailsWithPublicKey() {
         IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
                 publicKey.sign(message));
-        assertTrue(ex.getMessage().contains("Can not sign with a public key"));
+        assertEquals("Can not sign with a public key", ex.getMessage());
     }
 
     @Test
     public void testValidateFailsWithPrivateKey() {
         IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
                 privateKey.validateSignature(message, message, new byte[0]));
-        assertTrue(ex.getMessage().contains("Can not validate signature with a private key"));
+        assertEquals("Can not validate signature with a private key", ex.getMessage());
+    }
+
+    @Test
+    public void testCombined() throws GeneralSecurityException {
+        assertArrayEquals(message, publicKey.validateCombinedSignature(privateKey.signCombined(message)));
+
+        assertThrows(IllegalArgumentException.class, () -> privateKey.validateCombinedSignature(new byte[0]));
+    }
+
+    @Test
+    public void testSignatureSize() throws GeneralSecurityException {
+        byte[] random = new byte[10000];
+        new Random().nextBytes(random);
+        byte[] signature = privateKey.sign(random);
+
+        assertEquals(256, signature.length);
     }
 }

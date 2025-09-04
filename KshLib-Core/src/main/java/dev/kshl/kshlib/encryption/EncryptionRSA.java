@@ -1,6 +1,6 @@
 package dev.kshl.kshlib.encryption;
 
-// Java Program to Implement the RSA Algorithm
+import lombok.Getter;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
@@ -41,7 +42,9 @@ public class EncryptionRSA {
     }
 
     private final UUID uuid;
+    @Getter
     private final Key key;
+    @Getter
     private final String user;
     private final Cipher encryptCipher;
     private final Cipher decryptCipher;
@@ -99,16 +102,8 @@ public class EncryptionRSA {
         return Base64.getEncoder().encodeToString(key.getEncoded());
     }
 
-    public Key getKey() {
-        return key;
-    }
-
     public UUID getUUID() {
         return uuid;
-    }
-
-    public String getUser() {
-        return user;
     }
 
     public record RSAPair(EncryptionRSA publicKey, EncryptionRSA privateKey) {
@@ -124,7 +119,8 @@ public class EncryptionRSA {
         kpg.initialize(2048);
         java.security.KeyPair pair = kpg.generateKeyPair();
         UUID uuid = UUID.randomUUID();
-        return new RSAPair(new EncryptionRSA(uuid, pair.getPublic(), null), new EncryptionRSA(uuid, pair.getPrivate(), null));
+        String user = uuid.toString();
+        return new RSAPair(new EncryptionRSA(uuid, pair.getPublic(), user), new EncryptionRSA(uuid, pair.getPrivate(), user));
     }
 
     public byte[] encrypt(byte[] bytes) throws IllegalBlockSizeException, BadPaddingException {
@@ -153,7 +149,7 @@ public class EncryptionRSA {
         if (!(getKey() instanceof PublicKey publicKey)) {
             throw new IllegalStateException("Can not validate signature with a private key");
         }
-        if (!Arrays.equals(claimed, actual)) {
+        if (actual != null && !Arrays.equals(claimed, actual)) {
             throw new InvalidKeyException("TLS cert fingerprint mismatch");
         }
 
@@ -163,5 +159,31 @@ public class EncryptionRSA {
         if (!verifier.verify(signature)) {
             throw new InvalidKeyException("TLS fingerprint signature invalid");
         }
+    }
+
+    public byte[] signCombined(byte[] plaintext) throws GeneralSecurityException {
+        byte[] signature = sign(plaintext);
+        ByteBuffer combined = ByteBuffer.allocate(4 + plaintext.length + signature.length);
+        combined.putInt(plaintext.length);
+        combined.put(plaintext);
+        combined.put(signature);
+        return combined.array();
+    }
+
+    public byte[] validateCombinedSignature(byte[] combinedBytes) throws GeneralSecurityException {
+        if (combinedBytes.length < 6) throw new IllegalArgumentException("combinedBytes too short");
+
+        ByteBuffer combined = ByteBuffer.wrap(combinedBytes);
+        int plainTextLength = combined.getInt();
+        if (plainTextLength <= 0) throw new IllegalArgumentException("Invalid plainTextLength: " + plainTextLength);
+        byte[] claimed = new byte[plainTextLength];
+        int signatureLength = combinedBytes.length - plainTextLength - 4;
+        if (signatureLength <= 0) throw new IllegalArgumentException("combinedBytes too short");
+        byte[] signature = new byte[signatureLength];
+        combined.get(claimed);
+        combined.get(signature);
+
+        validateSignature(claimed, null, signature);
+        return claimed;
     }
 }
