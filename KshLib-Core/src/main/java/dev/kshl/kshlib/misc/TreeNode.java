@@ -1,34 +1,24 @@
 package dev.kshl.kshlib.misc;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+@RequiredArgsConstructor
+@Getter
 public class TreeNode<E> {
-
     @Nullable
     private final E node;
     @Nullable
     private TreeNode<E> parent;
 
     private final Set<TreeNode<E>> children = new HashSet<>();
-
-    public TreeNode(@Nullable E node, @Nullable TreeNode<E> parent) {
-        this.node = node;
-        this.parent = parent;
-    }
-
-    @Nullable
-    public E getNode() {
-        return node;
-    }
-
-    @Nullable
-    public TreeNode<E> getParent() {
-        return parent;
-    }
 
     @Nonnull
     public TreeNode<E> getUltimateParentOrThis() {
@@ -41,10 +31,6 @@ public class TreeNode<E> {
             throw new ParentOfNodeException();
         }
         if (parent != null) parent.checkNotParent(other);
-    }
-
-    public Set<TreeNode<E>> getChildren() {
-        return children;
     }
 
     public void addChild(TreeNode<E> nodeMap) {

@@ -15,7 +15,7 @@ public class TestTreeNode {
     public void initTestNodes() {
         treeNodes = new TreeNode[10];
         for (int i = 0; i < treeNodes.length; i++) {
-            treeNodes[i] = new TreeNode<>(i, null);
+            treeNodes[i] = new TreeNode<>(i);
         }
     }
 
