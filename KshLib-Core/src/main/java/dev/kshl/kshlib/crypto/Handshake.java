@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.encryption;
+package dev.kshl.kshlib.crypto;
 
 import dev.kshl.kshlib.function.ThrowingConsumer;
 import dev.kshl.kshlib.function.ThrowingSupplier;

@@ -1,6 +1,6 @@
 package dev.kshl.kshlib.sql;
 
-import dev.kshl.kshlib.encryption.CodeGenerator;
+import dev.kshl.kshlib.crypto.CodeGenerator;
 import dev.kshl.kshlib.exceptions.BusyException;
 
 import java.security.NoSuchAlgorithmException;
