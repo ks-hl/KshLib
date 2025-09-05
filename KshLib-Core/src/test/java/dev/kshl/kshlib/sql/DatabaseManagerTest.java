@@ -153,4 +153,15 @@ public class DatabaseManagerTest {
             assertEquals(2, count);
         }, 3000L);
     }
+
+    @DatabaseTest
+    public void testTableColumnExists(ConnectionManager sql) throws SQLException, BusyException {
+        String table = "table_exists";
+        sql.execute("DROP TABLE IF EXISTS " + table, 3000L);
+        assertFalse(sql.tableExists(table));
+        assertFalse(sql.columnExists(table, "col"));
+        sql.execute("CREATE TABLE " + table + " (col INT)", 3000L);
+        assertTrue(sql.columnExists(table, "col"));
+        assertFalse(sql.columnExists(table, "col2"));
+    }
 }

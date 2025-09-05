@@ -86,4 +86,18 @@ public class SettingManagerTest {
         assertTrue(settingManagerTrueDef.get(2));
         assertTrue(settingManagerTrueDef.toggle(1));
     }
+
+    @DatabaseTest
+    public void testMigration(ConnectionManager sql) throws SQLException, BusyException {
+        String table = "setting_migration";
+        sql.execute("CREATE TABLE " + table + " (uid INTEGER PRIMARY KEY, value INT)", 3000L);
+        sql.execute("INSERT INTO " + table + " (uid, value) VALUES (?,?)", 3000L, 1, 2);
+        sql.execute("INSERT INTO " + table + " (uid, value) VALUES (?,?)", 3000L, 3, 4);
+
+        SettingManager.Int settingManager = new SettingManager.Int(sql, table, false, 0);
+        sql.execute(settingManager::init, 3000L);
+
+        assertEquals(2, settingManager.get(1));
+        assertEquals(4, settingManager.get(3));
+    }
 }

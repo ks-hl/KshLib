@@ -1,6 +1,5 @@
 package dev.kshl.kshlib.sql;
 
-import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ThrowingFunction;
 import dev.kshl.kshlib.function.ThrowingRunnable;
@@ -13,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Blob;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -606,17 +606,25 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         return ready;
     }
 
+    public boolean tableExists(String table) throws SQLException, BusyException {
+        return execute((ConnectionFunction<Boolean>) connection -> tableExists(connection, table), 3000L);
+    }
+
     public boolean tableExists(Connection connection, String table) throws SQLException {
-        try {
-            execute(connection, "SELECT 1 FROM " + table); // test table exists
-            return true;
-        } catch (SQLException e) {
-            if (isMySQL()) {
-                if (e.getErrorCode() == MysqlErrorNumbers.ER_NO_SUCH_TABLE) return false;
-            } else {
-                if (e.getMessage().contains("no such table: " + table)) return false;
-            }
-            throw e;
+        DatabaseMetaData meta = connection.getMetaData();
+        try (ResultSet rs = meta.getTables(null, null, table, new String[]{"TABLE"})) {
+            return rs.next();
+        }
+    }
+
+    public boolean columnExists(String table, String column) throws SQLException, BusyException {
+        return execute((ConnectionFunction<Boolean>) connection -> columnExists(connection, table, column), 3000L);
+    }
+
+    public boolean columnExists(Connection connection, String table, String column) throws SQLException {
+        DatabaseMetaData meta = connection.getMetaData();
+        try (ResultSet rs = meta.getColumns(null, null, table, column)) {
+            return rs.next();
         }
     }
 

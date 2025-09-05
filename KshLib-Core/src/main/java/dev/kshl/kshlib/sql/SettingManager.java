@@ -3,6 +3,7 @@ package dev.kshl.kshlib.sql;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.misc.MapCache;
 import dev.kshl.kshlib.misc.Pair;
+import lombok.Getter;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -15,6 +16,7 @@ public abstract class SettingManager<T> {
     private final T def;
     private final String sqlType;
     private final ResultSetFunction<T> retrievalFunction;
+    @Getter
     private final boolean multiple;
     private boolean initDone;
 
@@ -31,9 +33,22 @@ public abstract class SettingManager<T> {
     public void init(Connection connection) throws SQLException {
         if (initDone) throw new IllegalStateException("Initialization is already complete.");
 
+        sql.executeTransaction(connection, () -> {
+            boolean needsMigrated = sql.tableExists(connection, table) && !sql.columnExists(connection, table, "setting");
+            
+            if (needsMigrated) {
+                sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
+                sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
+            }
 
-        String statement = "CREATE TABLE IF NOT EXISTS " + table + " (uid INTEGER, setting INTEGER, value " + sqlType + ", UNIQUE(uid,setting))";
-        sql.execute(connection, statement);
+            String statement = "CREATE TABLE IF NOT EXISTS " + table + " (uid INTEGER, setting INTEGER, value " + sqlType + ", UNIQUE(uid,setting))";
+            sql.execute(connection, statement);
+
+            if (needsMigrated) {
+                sql.execute(connection, "INSERT INTO " + table + " (uid, setting, value) SELECT uid, 0 AS setting, value FROM " + table + "_temp");
+                sql.execute(connection, "DROP TABLE " + table + "_temp");
+            }
+        });
 
         initDone = true;
     }
@@ -141,10 +156,6 @@ public abstract class SettingManager<T> {
 
     public String getString(int uid, int setting) throws SQLException, BusyException {
         return String.valueOf(get(uid, setting));
-    }
-
-    public boolean isMultiple() {
-        return multiple;
     }
 
     public static class Bool extends SettingManager<Boolean> {
