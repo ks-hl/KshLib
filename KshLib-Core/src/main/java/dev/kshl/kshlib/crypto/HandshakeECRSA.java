@@ -1,9 +1,8 @@
-package dev.kshl.kshlib.encryption;
+package dev.kshl.kshlib.crypto;
 
 import dev.kshl.kshlib.function.ThrowingConsumer;
 import dev.kshl.kshlib.function.ThrowingSupplier;
 import dev.kshl.kshlib.misc.Bits;
-import dev.kshl.kshlib.misc.UUIDHelper;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;

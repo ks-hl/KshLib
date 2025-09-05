@@ -1,6 +1,6 @@
 package dev.kshl.kshlib.sql;
 
-import dev.kshl.kshlib.encryption.HashPBKDF2;
+import dev.kshl.kshlib.crypto.HashPBKDF2;
 import dev.kshl.kshlib.exceptions.BusyException;
 
 import java.security.NoSuchAlgorithmException;

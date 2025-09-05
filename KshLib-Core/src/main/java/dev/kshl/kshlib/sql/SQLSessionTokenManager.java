@@ -1,7 +1,7 @@
 package dev.kshl.kshlib.sql;
 
-import dev.kshl.kshlib.encryption.CodeGenerator;
-import dev.kshl.kshlib.encryption.HashPBKDF2;
+import dev.kshl.kshlib.crypto.CodeGenerator;
+import dev.kshl.kshlib.crypto.HashPBKDF2;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.misc.MapCache;
 import javax.annotation.Nullable;

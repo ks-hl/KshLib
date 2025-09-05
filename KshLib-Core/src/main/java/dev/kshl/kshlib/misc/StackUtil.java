@@ -4,6 +4,7 @@ import javax.annotation.Nonnull;
 import java.util.Arrays;
 import java.util.Map.Entry;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 public class StackUtil {
     public static String dumpThreadStack(Predicate<String> check) {
@@ -61,5 +62,9 @@ public class StackUtil {
 
     public static String format(StackTraceElement element) {
         return String.format("    at %s.%s(%s:%s)", element.getClassName(), element.getMethodName(), element.getFileName(), element.getLineNumber());
+    }
+
+    public static Stream<String> asStream(@Nonnull StackTraceElement[] stack) {
+        return Arrays.stream(stack).map(StackUtil::format);
     }
 }

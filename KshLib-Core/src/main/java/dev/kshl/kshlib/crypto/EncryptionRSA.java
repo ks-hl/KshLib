@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.encryption;
+package dev.kshl.kshlib.crypto;
 
 import lombok.Getter;
 
