@@ -19,14 +19,17 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public abstract class ConnectionManager implements Closeable, AutoCloseable {
@@ -87,6 +90,10 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
 
     public String autoincrement() {
         return isMySQL() ? "AUTO_INCREMENT" : "AUTOINCREMENT";
+    }
+
+    public String indexedBy(String index) {
+        return String.format(isMySQL() ? "USE INDEX (%s)" : "INDEXED BY %s", index);
     }
 
     @SuppressWarnings("unused")
@@ -638,6 +645,72 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
             return rs.next();
         }
     }
+
+    public boolean primaryKeyExists(String table) throws SQLException, BusyException {
+        return execute((ConnectionFunction<Boolean>) connection -> primaryKeyExists(connection, table), 3000L);
+    }
+
+    public boolean primaryKeyExists(Connection connection, String table) throws SQLException {
+        DatabaseMetaData meta = connection.getMetaData();
+        try (ResultSet rs = meta.getPrimaryKeys(null, null, table)) {
+            return rs.next();
+        }
+    }
+
+    public boolean indexExists(String table, String index) throws SQLException, BusyException {
+        return execute((ConnectionFunction<Boolean>) connection -> indexExists(connection, table, index), 3000L);
+    }
+
+    public boolean indexExists(Connection connection, String table, String index) throws SQLException {
+        DatabaseMetaData meta = connection.getMetaData();
+        try (ResultSet rs = meta.getIndexInfo(null, null, table, false, false)) {
+            while (rs.next()) {
+                String idxName = rs.getString("INDEX_NAME");
+                if (idxName != null && idxName.equalsIgnoreCase(index)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public boolean uniqueConstraintExists(String table, String... columns) throws SQLException, BusyException {
+        return execute((ConnectionFunction<Boolean>) connection -> uniqueConstraintExists(connection, table, columns), 3000L);
+    }
+
+    public boolean uniqueConstraintExists(Connection connection, String table, String... columns) throws SQLException {
+        DatabaseMetaData meta = connection.getMetaData();
+        Set<String> requested = Arrays.stream(columns)
+                .map(String::toLowerCase)
+                .collect(Collectors.toSet());
+
+        // Map of indexName -> set of columns in that index
+        Map<String, Set<String>> indexColumns = new HashMap<>();
+
+        try (ResultSet rs = meta.getIndexInfo(null, null, table, true, false)) {
+            while (rs.next()) {
+                boolean nonUnique = rs.getBoolean("NON_UNIQUE"); // false means unique
+                if (nonUnique) continue;
+
+                String idxName = rs.getString("INDEX_NAME");
+                String colName = rs.getString("COLUMN_NAME");
+
+                if (idxName != null && colName != null) {
+                    indexColumns.computeIfAbsent(idxName, k -> new HashSet<>())
+                            .add(colName.toLowerCase());
+                }
+            }
+        }
+
+        // Check if any unique index fully covers all requested columns
+        for (Set<String> cols : indexColumns.values()) {
+            if (cols.equals(requested)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     @Override
     public String toString() {

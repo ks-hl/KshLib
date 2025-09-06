@@ -164,4 +164,64 @@ public class DatabaseManagerTest {
         assertTrue(sql.columnExists(table, "col"));
         assertFalse(sql.columnExists(table, "col2"));
     }
+
+    @DatabaseTest
+    public void testPrimaryKeyExists(ConnectionManager sql) throws SQLException, BusyException {
+        String table = "pk_test";
+        sql.execute("DROP TABLE IF EXISTS " + table, 3000L);
+
+        // Create table without primary key
+        sql.execute("CREATE TABLE " + table + " (col INT)", 3000L);
+        assertFalse(sql.primaryKeyExists(table));
+
+        // Drop and recreate with primary key
+        sql.execute("DROP TABLE " + table, 3000L);
+        sql.execute("CREATE TABLE " + table + " (id INT PRIMARY KEY, col INT)", 3000L);
+        assertTrue(sql.primaryKeyExists(table));
+    }
+
+    @DatabaseTest
+    public void testIndexExists(ConnectionManager sql) throws SQLException, BusyException {
+        String table = "idx_test";
+        String index = "idx_col";
+        sql.execute("DROP TABLE IF EXISTS " + table, 3000L);
+
+        // Create table without index
+        sql.execute("CREATE TABLE " + table + " (col INT)", 3000L);
+        assertFalse(sql.indexExists(table, index));
+
+        // Create index explicitly
+        sql.execute("CREATE INDEX " + index + " ON " + table + " (col)", 3000L);
+        assertTrue(sql.indexExists(table, index));
+
+        // Check for a non-existent index
+        assertFalse(sql.indexExists(table, "nonexistent_index"));
+    }
+
+    @DatabaseTest
+    public void testUniqueConstraintExists(ConnectionManager sql) throws SQLException, BusyException {
+        String table = "unique_test";
+        sql.execute("DROP TABLE IF EXISTS " + table, 3000L);
+
+        // Create table without unique constraint
+        sql.execute("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, value TEXT)", 3000L);
+        assertFalse(sql.uniqueConstraintExists(table, "value"));
+
+        // Drop and recreate with a UNIQUE constraint on 'value'
+        sql.execute("DROP TABLE " + table, 3000L);
+        sql.execute("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, value TEXT UNIQUE)", 3000L);
+        assertTrue(sql.uniqueConstraintExists(table, "value"));
+
+        // Add another column without unique constraint
+        assertFalse(sql.uniqueConstraintExists(table, "other_col"));
+
+        // Drop and recreate with a UNIQUE constraint on both
+        sql.execute("DROP TABLE " + table, 3000L);
+        sql.execute("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, value TEXT, UNIQUE(id,value))", 3000L);
+        assertFalse(sql.uniqueConstraintExists(table, "value"));
+        assertTrue(sql.uniqueConstraintExists(table, "id", "value"));
+        assertTrue(sql.uniqueConstraintExists(table, "value", "id"));
+    }
+
+
 }

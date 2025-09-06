@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.misc.Pair;
 
 import java.sql.SQLException;
 import java.util.Optional;
@@ -26,13 +27,14 @@ public class SQLUsernameManagerTest {
         assertEquals("testuser", retrievedUsername.get());
 
         // Test retrieving UID by username (case insensitive check)
-        Optional<Integer> retrievedUID = usernameManager.getUID("TESTUSER");
-        assertTrue(retrievedUID.isPresent());
-        assertEquals(1, retrievedUID.get().intValue());
+        Optional<Pair<Integer, String>> retrievedUIDAndUsername = usernameManager.getUIDAndUsername("TESTUSER");
+        assertTrue(retrievedUIDAndUsername.isPresent());
+        assertEquals(1, retrievedUIDAndUsername.get().getLeft().intValue());
+        assertEquals("testuser", retrievedUIDAndUsername.get().getRight());
 
         // Test updating the username with a different UID (more recent entry)
         usernameManager.updateUsername(2, "testuser");
-        retrievedUID = usernameManager.getUID("testuser");
+        var retrievedUID = usernameManager.getUID("testuser");
         assertTrue(retrievedUID.isPresent());
         assertEquals(2, retrievedUID.get().intValue()); // Should return the most recent UID
 
