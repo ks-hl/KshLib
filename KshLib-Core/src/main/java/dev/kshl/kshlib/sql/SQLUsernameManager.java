@@ -49,8 +49,8 @@ public class SQLUsernameManager implements ISQLManager {
             }
             sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_time ON %s (time)", table, table));
             sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_uid_time ON %s (uid, time DESC)", table, table));
-            sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_username_time ON %s (username, time DESC)", table, table));
 
+            // Case-insensitive username index
             if (sql.isMySQL()) {
                 sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_username_time ON %s (username, time DESC)", table, table));
             } else {
