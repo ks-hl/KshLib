@@ -121,30 +121,41 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      */
     @SuppressWarnings("unused")
     public final int executeReturnRows(String stmt, long wait, Object... args) throws SQLException, BusyException {
+        return execute((ConnectionFunction<Integer>) connection -> executeReturnRows(connection, stmt, args), wait);
+    }
+
+    /**
+     * @see PreparedStatement#executeUpdate()
+     */
+    @SuppressWarnings("unused")
+    public final int executeReturnRows(Connection connection, String stmt, Object... args) throws SQLException, BusyException {
         debugSQLStatement(stmt, args);
-        return execute(connection -> {
-            try (PreparedStatement pstmt = connection.prepareStatement(stmt)) {
-                prepare(connection, pstmt, args);
-                return pstmt.executeUpdate();
-            }
-        }, wait);
+        try (PreparedStatement pstmt = connection.prepareStatement(stmt)) {
+            prepare(connection, pstmt, args);
+            return pstmt.executeUpdate();
+        }
     }
 
     /**
      * @see PreparedStatement#executeUpdate()
      */
     public final int executeReturnGenerated(String stmt, long wait, Object... args) throws SQLException, BusyException {
+        return execute((ConnectionFunction<Integer>) connection -> executeReturnGenerated(connection, stmt, args), wait);
+    }
+
+    /**
+     * @see PreparedStatement#executeUpdate()
+     */
+    public final int executeReturnGenerated(Connection connection, String stmt, Object... args) throws SQLException, BusyException {
         debugSQLStatement(stmt, args);
-        return execute(connection -> {
-            try (PreparedStatement pstmt = connection.prepareStatement(stmt, Statement.RETURN_GENERATED_KEYS)) {
-                prepare(connection, pstmt, args);
-                pstmt.executeUpdate();
-                try (ResultSet rs = pstmt.getGeneratedKeys()) {
-                    if (rs.next()) return rs.getInt(1);
-                }
+        try (PreparedStatement pstmt = connection.prepareStatement(stmt, Statement.RETURN_GENERATED_KEYS)) {
+            prepare(connection, pstmt, args);
+            pstmt.executeUpdate();
+            try (ResultSet rs = pstmt.getGeneratedKeys()) {
+                if (rs.next()) return rs.getInt(1);
             }
-            return -1;
-        }, wait);
+        }
+        return -1;
     }
 
     @SuppressWarnings("unused")
