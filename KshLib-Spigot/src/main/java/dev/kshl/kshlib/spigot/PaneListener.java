@@ -14,13 +14,13 @@ import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 public class PaneListener implements Listener {
-    private final Set<Pane> openPanes = new HashSet<>();
+    private final Set<Pane> openPanes = ConcurrentHashMap.newKeySet();
 
     public Pane newPane(PaneType type, HumanEntity player, Function<Pane, Inventory> inventoryFunction) {
         Pane pane = new Pane(this, type, player);

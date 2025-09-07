@@ -36,19 +36,13 @@ public class ConnectionPoolSQLite extends ConnectionPool {
         if (isClosing()) {
             throw new BusyException("Database closing");
         }
-        try {
-            return connection.functionThrowing(connection -> {
-                var ret = connectionFunction.apply(connection);
-                if (this.connection.getHoldCount() == 1 && !connection.getAutoCommit()) {
-                    throw new IllegalStateException("Auto commit not re-enabled after transaction");
-                }
-                return ret;
-            }, wait);
-        } catch (SQLException | BusyException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return connection.functionThrowing(connection -> {
+            var ret = connectionFunction.apply(connection);
+            if (this.connection.getHoldCount() == 1 && !connection.getAutoCommit()) {
+                throw new IllegalStateException("Auto commit not re-enabled after transaction");
+            }
+            return ret;
+        }, wait);
     }
 
     @Override

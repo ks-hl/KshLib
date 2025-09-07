@@ -13,7 +13,7 @@ class TestConnectionManager extends ConnectionManager {
         init();
     }
 
-    public TestConnectionManager(String uri, String database, String user, String pwd, int poolSize) throws SQLException, ClassNotFoundException {
+    public TestConnectionManager(String uri, String database, String user, String pwd, int poolSize) throws SQLException, ClassNotFoundException, IOException {
         super(uri, database, user, pwd, poolSize);
 
         init();

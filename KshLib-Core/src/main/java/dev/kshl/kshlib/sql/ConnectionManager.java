@@ -6,6 +6,7 @@ import dev.kshl.kshlib.function.ThrowingRunnable;
 import dev.kshl.kshlib.function.ThrowingSupplier;
 import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
 
+import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -38,14 +39,22 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     private boolean ready;
     private boolean shuttingDown;
 
-    @SuppressWarnings("unused")
     public ConnectionManager(File sqliteFile) throws IOException, SQLException, ClassNotFoundException {
-        this.connectionPool = new ConnectionPoolSQLite(sqliteFile);
+        this(sqliteFile, null, null, null, null, 0);
     }
 
-    @SuppressWarnings("unused")
-    public ConnectionManager(String uri, String database, String user, String pwd, int poolSize) throws SQLException, ClassNotFoundException {
-        this.connectionPool = new ConnectionPoolHikari(uri, database, user, pwd, poolSize);
+    public ConnectionManager(String uri, String database, String user, String password, int poolSize) throws IOException, SQLException, ClassNotFoundException {
+        this(null, uri, database, user, password, poolSize);
+    }
+
+    public ConnectionManager(@Nullable File sqliteFile, @Nullable String hostAndPort, @Nullable String database, @Nullable String user, @Nullable String password, int poolSize) throws ClassNotFoundException, SQLException, IOException {
+        if (sqliteFile != null) {
+            this.connectionPool = new ConnectionPoolSQLite(sqliteFile);
+        } else if (hostAndPort != null) {
+            this.connectionPool = new ConnectionPoolHikari(hostAndPort, database, user, password, poolSize);
+        } else {
+            throw new NullPointerException("sqliteFile or hostAndPort must be not null");
+        }
     }
 
     @SuppressWarnings("unused")
@@ -201,7 +210,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     public final <T> T execute(ConnectionFunction<T> task, long wait) throws SQLException, BusyException {
         try {
             return executeWithException(task::apply, wait);
-        } catch (SQLException | BusyException e) {
+        } catch (SQLException | BusyException | IllegalStateException e) {
             throw e;
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -467,7 +476,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     @SuppressWarnings("unused")
-    protected final int count(String table, long wait) throws SQLException, BusyException {
+    public final int count(String table, long wait) throws SQLException, BusyException {
         return execute((ConnectionFunction<Integer>) connection -> count(connection, table), wait);
     }
 
@@ -529,7 +538,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }, 10000L);
     }
 
-    protected final String getCountStmt() {
+    public final String getCountStmt() {
         if (isMySQL()) {
             return "SELECT COUNT(*) FROM ";
         } else {
@@ -537,14 +546,14 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }
     }
 
-    protected void prepare(Connection connection, PreparedStatement preparedStatement, Object... args) throws SQLException {
+    public void prepare(Connection connection, PreparedStatement preparedStatement, Object... args) throws SQLException {
         if (args == null) return;
         for (int i = 0; i < args.length; i++) {
             prepare(connection, preparedStatement, i + 1, args[i]);
         }
     }
 
-    protected void prepare(Connection connection, PreparedStatement preparedStatement, int index, Object o) throws SQLException {
+    public void prepare(Connection connection, PreparedStatement preparedStatement, int index, Object o) throws SQLException {
         if (o instanceof AbstractEmbeddings embeddings) {
             o = embeddings.toString();
         }
