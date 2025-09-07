@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import lombok.Getter;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -10,6 +11,7 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 public abstract class ConnectionPool {
+    @Getter
     private boolean closing;
     private final Map<Long, Long> usage = new HashMap<>();
 
@@ -114,10 +116,6 @@ public abstract class ConnectionPool {
 
     @SuppressWarnings("unused")
     public abstract int getAllEstablishedConnections();
-
-    public boolean isClosing() {
-        return closing;
-    }
 
     public final void close() {
         if (closing) return;

@@ -9,15 +9,9 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.HashSet;
-import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class ConnectionPoolMySQL extends ConnectionPool {
@@ -72,7 +66,16 @@ public class ConnectionPoolMySQL extends ConnectionPool {
         } finally {
             if (firstInThread) {
                 issuedConnections.remove(threadID);
-                if (isClosing() || connectionPool.size() >= poolSize || !testConnection(out)) {
+
+                boolean connectionFailed = out.isClosed() || !testConnection(out);
+                if (connectionFailed) {
+                    // The connection failed or was closed, replace it
+                    connectionPool.add(newConnection());
+                }
+
+                if (connectionFailed || isClosing() || connectionPool.size() >= poolSize) {
+                    // Either the connection itself was closed, this pool is shutting down, or this pool somehow got too big.
+                    // Close this connection if possible and remove it from the pool.
                     try {
                         out.close();
                     } catch (SQLException ignored) {
@@ -137,14 +140,11 @@ public class ConnectionPoolMySQL extends ConnectionPool {
 
     private final ReentrantLock getConnectionLock = new ReentrantLock();
 
-    private Connection getConnectionFromPool(long wait) throws BusyException {
+    private Connection getConnectionFromPool(long wait) throws BusyException, InterruptedException {
         final long startTime = System.currentTimeMillis();
 
-        try {
-            if (!getConnectionLock.tryLock(startTime, TimeUnit.MILLISECONDS)) {
-                throw new BusyException("Unable to obtain Connection from pool");
-            }
-        } catch (InterruptedException ignored) {
+        if (!getConnectionLock.tryLock(wait, TimeUnit.MILLISECONDS)) {
+            throw new BusyException("Unable to obtain Connection from pool");
         }
 
         try {
