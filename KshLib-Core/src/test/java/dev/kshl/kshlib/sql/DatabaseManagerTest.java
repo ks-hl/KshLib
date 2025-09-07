@@ -118,15 +118,16 @@ public class DatabaseManagerTest {
     @DatabaseTest
     public void testBatchInsert(ConnectionManager connectionManager) throws SQLException, BusyException {
         String table = "batch_test";
-        connectionManager.execute("CREATE TABLE IF NOT EXISTS " + table + " (a INT, b INT)", 3000L);
+        connectionManager.execute("DROP TABLE IF EXISTS " + table, 3000L);
+        connectionManager.execute("CREATE TABLE " + table + " (a INT, b INT)", 3000L);
 
+        int[][] expected = {{1, 2}, {3, 4}};
         connectionManager.executeBatch("INSERT INTO " + table + " (a,b) VALUES (?,?)",
-                List.of(new int[]{1, 2}, new int[]{3, 4}),
+                List.of(expected),
                 i -> List.of(i[0], i[1]),
                 3000L
         );
         connectionManager.query("SELECT * FROM " + table, rs -> {
-            int[][] expected = {{1, 2}, {3, 4}};
             int count = 0;
             while (rs.next()) {
                 assertEquals(expected[count][0], rs.getInt(1));
@@ -143,11 +144,10 @@ public class DatabaseManagerTest {
                 3000L
         );
         connectionManager.query("SELECT * FROM " + table, rs -> {
-            int[][] expected = {{2, 1}, {4, 3}};
             int count = 0;
             while (rs.next()) {
-                assertEquals(expected[count][0], rs.getInt(1));
-                assertEquals(expected[count][1], rs.getInt(2));
+                assertEquals(expected[count][1], rs.getInt(1));
+                assertEquals(expected[count][0], rs.getInt(2));
                 count++;
             }
             assertEquals(2, count);

@@ -107,9 +107,7 @@ public abstract class ConnectionPool {
         }
     }
 
-    public final boolean isMySQL() {
-        return this instanceof ConnectionPoolMySQL;
-    }
+    public abstract boolean isMySQL();
 
     @SuppressWarnings("unused")
     public abstract int getActiveConnections();

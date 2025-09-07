@@ -31,7 +31,7 @@ public class LLMEmbeddingsManager {
         connectionManager.execute(connection,
                 "CREATE TABLE IF NOT EXISTS " + table + " (" +
                         "id INTEGER PRIMARY KEY " + connectionManager.autoincrement() + ", " +
-                        "vector BLOB NOT NULL," +
+                        "vector BLOB NOT NULL, " +
                         "hash INTEGER" +
                         ")");
 

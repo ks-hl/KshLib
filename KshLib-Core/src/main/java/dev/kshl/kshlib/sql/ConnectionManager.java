@@ -45,7 +45,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
 
     @SuppressWarnings("unused")
     public ConnectionManager(String uri, String database, String user, String pwd, int poolSize) throws SQLException, ClassNotFoundException {
-        this.connectionPool = new ConnectionPoolMySQL(uri, database, user, pwd, poolSize);
+        this.connectionPool = new ConnectionPoolHikari(uri, database, user, pwd, poolSize);
     }
 
     @SuppressWarnings("unused")

@@ -75,4 +75,9 @@ public class ConnectionPoolSQLite extends ConnectionPool {
     protected void checkDriver() throws ClassNotFoundException {
         Class.forName("org.sqlite.JDBC");
     }
+
+    @Override
+    public boolean isMySQL() {
+        return false;
+    }
 }
