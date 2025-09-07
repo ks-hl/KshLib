@@ -70,11 +70,19 @@ public class SQLUsernameManagerTest {
 
         // Ensure old username still returns the UID
         retrievedUID = usernameManager.getUID("testuser");
-        assertTrue(retrievedUID.isPresent());
+        assertEquals(4, retrievedUID.orElseThrow());
 
         // Ensure the username associated with UID 4 is updated
         retrievedUsername = usernameManager.getUsername(4);
         assertTrue(retrievedUsername.isPresent());
         assertEquals("newuser", retrievedUsername.get());
+
+        // Repeat history
+        usernameManager.updateUsername(1, "1");
+        assertEquals("1", usernameManager.getUsername(1).orElseThrow());
+        usernameManager.updateUsername(1, "2");
+        assertEquals("2", usernameManager.getUsername(1).orElseThrow());
+        usernameManager.updateUsername(1, "1");
+        assertEquals("1", usernameManager.getUsername(1).orElseThrow());
     }
 }

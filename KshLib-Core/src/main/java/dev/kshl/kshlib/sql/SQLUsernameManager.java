@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
 public class SQLUsernameManager implements ISQLManager {
 
@@ -26,7 +27,7 @@ public class SQLUsernameManager implements ISQLManager {
 
     public void init(Connection connection) throws SQLException {
         sql.executeTransaction(connection, () -> {
-            boolean needsMigration = sql.uniqueConstraintExists(connection, table, "uid", "username");
+            boolean needsMigration = sql.tableExists(connection, table) && !sql.uniqueConstraintExists(connection, table, "uid", "username");
             if (needsMigration) {
                 sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
                 sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
@@ -36,16 +37,21 @@ public class SQLUsernameManager implements ISQLManager {
                     CREATE TABLE IF NOT EXISTS %s (
                         time BIGINT,
                         uid INTEGER,
-                        username VARCHAR(255)%s
+                        username VARCHAR(255)%s,
+                        UNIQUE(uid,username)
                     )""", table, sql.isMySQL() ? " COLLATE utf8mb4_general_ci" : "")); // utf8mb4_general_ci gives case-insensitive indexing to MySQL
 
             if (needsMigration) {
-                sql.execute(connection, "INSERT INTO " + table + " SELECT * FROM " + table + "_temp");
+                sql.execute(connection, "INSERT OR IGNORE INTO " + table + " SELECT * FROM " + table + "_temp ORDER BY TIME DESC");
                 sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
             }
 
             if (sql.indexExists(connection, table, "idx_time")) {
-                sql.execute(connection, "DROP INDEX IF EXISTS idx_time");
+                if (sql.isMySQL()) {
+                    sql.execute(connection, "DROP INDEX IF EXISTS idx_time ON " + table);
+                } else {
+                    sql.execute(connection, "DROP INDEX IF EXISTS idx_time");
+                }
             }
             sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_time ON %s (time)", table, table));
             sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_uid_time ON %s (uid, time DESC)", table, table));
@@ -63,7 +69,17 @@ public class SQLUsernameManager implements ISQLManager {
         Objects.requireNonNull(username, "Username must not be null");
         if (uid <= 0) throw new IllegalArgumentException("UID must be > 0");
 
-        sql.execute("INSERT INTO " + table + " (time,uid,username) VALUES (?,?,?)", 3000L, System.currentTimeMillis(), uid, username);
+        long now = System.currentTimeMillis();
+        sql.executeTransaction(connection -> {
+            if (sql.isMySQL()) {
+                // MySQL: single statement handles both insert and update
+                sql.execute(connection,
+                        "INSERT INTO " + table + " (time,uid,username) VALUES (?,?,?) ON DUPLICATE KEY UPDATE time=VALUES(time)", now, uid, username);
+            } else {
+                if (sql.executeReturnRows(connection, "INSERT OR IGNORE INTO " + table + " (time,uid,username) VALUES (?,?,?)", now, uid, username) > 0) return;
+                sql.execute(connection, "UPDATE " + table + " SET time=? WHERE uid=? AND username=?", now, uid, username);
+            }
+        }, 3000L);
         cacheUIDToUsername.remove(uid);
         cacheUsernameToUID.remove(username.toLowerCase());
         cache(uid, username);
@@ -116,6 +132,16 @@ public class SQLUsernameManager implements ISQLManager {
 
         if (uidName.filter(p -> p.getLeft() != null && p.getRight() != null).isEmpty()) return Optional.empty();
         return uidName;
+    }
+
+    public Optional<Pair<UUID, String>> getUUIDAndUsername(String username, SQLIDManager.UUIDText sqlIDManager) throws SQLException, BusyException {
+        return getUIDAndUsername(username).map((Function<? super Pair<Integer, String>, ? extends Pair<UUID, String>>) p -> {
+            try {
+                return new Pair<>(sqlIDManager.getValueOpt(p.getLeft()).orElseThrow(), p.getRight());
+            } catch (SQLException | BusyException e) {
+                return null;
+            }
+        });
     }
 
     public Optional<UUID> getUUID(String username, SQLIDManager.UUIDText sqlIDManager) throws SQLException, BusyException {

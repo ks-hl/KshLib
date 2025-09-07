@@ -97,11 +97,14 @@ public abstract class SQLIDManager<V> {
     }
 
 
-    public int getIDOrInsert(V value) throws SQLException, BusyException {
-        return getIDOpt(value, true).orElseThrow();
+    public int getIDOrInsert(@Nonnull V value) throws SQLException, BusyException {
+        return sql.execute((ConnectionFunction<Integer>) connection -> getIDOrInsert(connection, value), 3000L);
     }
 
-    public int getIDOrInsert(Connection connection, V value) throws SQLException {
+    public int getIDOrInsert(Connection connection, @Nonnull V value) throws SQLException {
+        Objects.requireNonNull(value, "value must be nonnull");
+        if (isInvalid(value)) throw new IllegalArgumentException("Invalid value: " + value);
+
         return getIDOpt(connection, value, true, false).orElseThrow();
     }
 

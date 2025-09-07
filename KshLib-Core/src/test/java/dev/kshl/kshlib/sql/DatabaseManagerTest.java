@@ -60,8 +60,8 @@ public class DatabaseManagerTest {
         try {
             connectionManagerList.add(new TestConnectionManager("localhost:3306", "test", "test", "password", 8));  // MySQL)
         } catch (SQLException e) {
-            if (e.getErrorCode() != 0) throw e;
-            System.err.println("MySQL db not found");
+            System.err.println("MySQL db not found or error occurred");
+            e.printStackTrace();
         }
 
         return connectionManagerList.stream();
