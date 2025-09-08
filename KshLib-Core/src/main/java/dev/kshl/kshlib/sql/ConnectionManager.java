@@ -343,7 +343,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     public <T> void executeBatch(Connection connection, String statement, Collection<T> collection, ThrowingFunction<T, List<?>, SQLException> valueFunction) throws SQLException {
-        execute(connection, statement, ps -> {
+        try (PreparedStatement ps = connection.prepareStatement(statement)) {
             for (T element : collection) {
                 List<?> values = valueFunction.apply(element);
                 for (int i = 0; i < values.size(); i++) {
@@ -353,7 +353,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
                 ps.addBatch();
             }
             ps.executeBatch();
-        });
+        }
     }
 
     //
