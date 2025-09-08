@@ -17,6 +17,7 @@ import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
@@ -210,7 +211,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     public final <T> T execute(ConnectionFunction<T> task, long wait) throws SQLException, BusyException {
         try {
             return executeWithException(task::apply, wait);
-        } catch (SQLException | BusyException | IllegalStateException e) {
+        } catch (SQLException | BusyException | RuntimeException e) {
             throw e;
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -547,9 +548,22 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     public void prepare(Connection connection, PreparedStatement preparedStatement, Object... args) throws SQLException {
-        if (args == null) return;
+        int parameters = -1;
+        try {
+            parameters = preparedStatement.getParameterMetaData().getParameterCount();
+        } catch (SQLFeatureNotSupportedException ignored) {
+        }
+        if (args == null) args = new Object[0];
+        if (parameters > args.length) {
+            throw new IllegalArgumentException(String.format("Not enough arguments provided (%s) for the number of parameters (%s) in the query.", args.length, parameters));
+        }
         for (int i = 0; i < args.length; i++) {
-            prepare(connection, preparedStatement, i + 1, args[i]);
+            try {
+                prepare(connection, preparedStatement, i + 1, args[i]);
+            } catch (SQLException e) {
+                if (!e.getMessage().contains("index out of range")) throw e;
+                throw new ArrayIndexOutOfBoundsException(i);
+            }
         }
     }
 
@@ -739,5 +753,13 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      */
     public double[] getUsageTimeRatios() {
         return connectionPool.getUsageTimeRatios();
+    }
+
+    public int getActiveConnections() {
+        return connectionPool.getActiveConnections();
+    }
+
+    public int getAllEstablishedConnections() {
+        return connectionPool.getAllEstablishedConnections();
     }
 }

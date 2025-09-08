@@ -223,5 +223,13 @@ public class DatabaseManagerTest {
         assertTrue(sql.uniqueConstraintExists(table, "value", "id"));
     }
 
+    @DatabaseTest
+    public void testParameterCounts(ConnectionManager sql) throws SQLException, BusyException {
+        String table = "parameter_test";
+        sql.execute("DROP TABLE IF EXISTS " + table, 3000L);
+        sql.execute("CREATE TABLE " + table + " (a INT)", 3000L);
+        assertThrows(IllegalArgumentException.class, () -> sql.execute("SELECT 1 FROM " + table + " WHERE a=?", 3000L));
+        assertThrows(ArrayIndexOutOfBoundsException.class, () -> sql.execute("SELECT 1 FROM " + table, 3000L, 1));
+    }
 
 }
