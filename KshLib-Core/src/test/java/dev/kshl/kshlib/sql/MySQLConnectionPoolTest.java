@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionConsumer;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -54,7 +55,11 @@ public class MySQLConnectionPoolTest {
                 }
             });
             thread.start();
-            thread.join();
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
         };
 
         connectionManager.execute(test, 3000L);

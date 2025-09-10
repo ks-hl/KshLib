@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.sql;
+package dev.kshl.kshlib.function;
 
 import java.sql.Connection;
 

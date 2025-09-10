@@ -1,4 +1,4 @@
-package dev.kshl.kshlib.sql;
+package dev.kshl.kshlib.function;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 
@@ -7,5 +7,5 @@ import java.sql.SQLException;
 
 @FunctionalInterface
 public interface ConnectionConsumer {
-    void accept(Connection connection) throws SQLException, BusyException, InterruptedException;
+    void accept(Connection connection) throws SQLException, BusyException;
 }

@@ -3,11 +3,14 @@ package dev.kshl.kshlib.sql;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.misc.MapCache;
 import dev.kshl.kshlib.misc.Pair;
+import dev.kshl.kshlib.misc.TreeSetString;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -17,6 +20,8 @@ public class SQLUsernameManager implements ISQLManager {
     private final String table;
     private final MapCache<Integer, String> cacheUIDToUsername = new MapCache<>(3600000L, 30000L, true);
     private final MapCache<String, Integer> cacheUsernameToUID = new MapCache<>(3600000L, 30000L, true);
+    private final TreeSetString recentUsernames = new TreeSetString.CaseInsensitive();
+    private boolean recentUsernamesInitialized;
 
     public SQLUsernameManager(ConnectionManager sql, String table) {
         validateTableName(table);
@@ -92,6 +97,9 @@ public class SQLUsernameManager implements ISQLManager {
         if (username != null) {
             cacheUsernameToUID.put(username.toLowerCase(), uid);
         }
+        synchronized (recentUsernames) {
+            recentUsernames.add(username);
+        }
     }
 
     public Optional<String> getUsername(int uid) throws SQLException, BusyException {
@@ -107,6 +115,42 @@ public class SQLUsernameManager implements ISQLManager {
 
         cache(uid, username.orElse(null));
         return username;
+    }
+
+    /**
+     * Populates a TreeSet with recent usernames so it may be queried for command prefix uses
+     *
+     * @param limit The limit to retrieve from the database. It can grow larger than this as new usernames are added during runtime. 5,000 is a good starting point, this will use around 450KB of memory, so it's not insignificant.
+     */
+    public void populateRecentUsernames(int limit) throws SQLException, BusyException {
+        synchronized (recentUsernames) {
+            if (recentUsernamesInitialized) {
+                throw new IllegalStateException("recentUsernames already initialized");
+            }
+            sql.query("SELECT username FROM " + table + " ORDER BY time DESC LIMIT %s", rs -> {
+                while (rs.next()) {
+                    recentUsernames.add(rs.getString(1));
+                }
+            }, 3000L, limit);
+        }
+    }
+
+    public Set<String> getRecentUsernamesStartingWith(String prefix) {
+        synchronized (recentUsernames) {
+            if (!recentUsernamesInitialized) {
+                throw new IllegalStateException("recentUsernames not initialized. Call populateRecentUsernames first.");
+            }
+            return Collections.unmodifiableSet(recentUsernames.getSubList(prefix));
+        }
+    }
+
+    public int getRecentUsernamesSize() {
+        synchronized (recentUsernames) {
+            if (!recentUsernamesInitialized) {
+                throw new IllegalStateException("recentUsernames not initialized. Call populateRecentUsernames first.");
+            }
+            return recentUsernames.size();
+        }
     }
 
     public Optional<Integer> getUID(String username) throws SQLException, BusyException {

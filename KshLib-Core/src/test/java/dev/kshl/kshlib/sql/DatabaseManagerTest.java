@@ -1,6 +1,8 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionFunction;
+import dev.kshl.kshlib.function.PreparedStatementFunction;
 import dev.kshl.kshlib.function.ThrowingConsumer;
 
 import java.io.File;

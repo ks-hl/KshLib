@@ -3,6 +3,7 @@ package dev.kshl.kshlib.sql;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionFunctionWithException;
 
 import java.sql.Connection;
 import java.sql.SQLException;

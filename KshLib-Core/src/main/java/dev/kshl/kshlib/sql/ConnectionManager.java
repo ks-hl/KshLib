@@ -1,24 +1,30 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionConsumer;
+import dev.kshl.kshlib.function.ConnectionFunction;
+import dev.kshl.kshlib.function.ConnectionFunctionWithException;
+import dev.kshl.kshlib.function.PreparedStatementConsumer;
+import dev.kshl.kshlib.function.PreparedStatementFunction;
+import dev.kshl.kshlib.function.ResultSetConsumer;
+import dev.kshl.kshlib.function.ResultSetFunction;
 import dev.kshl.kshlib.function.ThrowingFunction;
 import dev.kshl.kshlib.function.ThrowingRunnable;
 import dev.kshl.kshlib.function.ThrowingSupplier;
 import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
 
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.sql.Blob;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
-import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -63,30 +69,11 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         return str.replaceAll("[^\\u0020-\\u007F]", "¿");
     }
 
-    @SuppressWarnings("unused")
-    public static String getSize(double bytes) {
-        int oom = 0;
-        while (bytes > 1024) {
-            bytes /= 1024;
-            oom++;
-        }
-        String out = switch (oom) {
-            case 0 -> "B";
-            case 1 -> "KB";
-            case 2 -> "MB";
-            case 3 -> "GB";
-            case 4 -> "TB";
-            default -> "";
-        };
-        return (Math.round(bytes * 100.0) / 100.0) + " " + out;
-    }
-
     public static boolean isConstraintViolation(Exception e) {
         if (!(e instanceof SQLException sqlException)) return false;
         return Set.of(19, 1062, 1169, 4025).contains(sqlException.getErrorCode());
     }
 
-    @SuppressWarnings("unused")
     public final void init() throws SQLException {
         if (ready) throw new IllegalStateException("Already initialized");
         try {
@@ -98,15 +85,16 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         postInit();
     }
 
+    @SuppressWarnings("unused")
     public String autoincrement() {
         return isMySQL() ? "AUTO_INCREMENT" : "AUTOINCREMENT";
     }
 
+    @SuppressWarnings("unused")
     public String indexedBy(String index) {
         return String.format(isMySQL() ? "USE INDEX (%s)" : "INDEXED BY %s", index);
     }
 
-    @SuppressWarnings("unused")
     protected abstract void init(Connection connection) throws SQLException;
 
     protected void postInit() throws SQLException {
@@ -138,51 +126,33 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      */
     @SuppressWarnings("unused")
     public final int executeReturnRows(String stmt, long wait, Object... args) throws SQLException, BusyException {
-        return execute((ConnectionFunction<Integer>) connection -> executeReturnRows(connection, stmt, args), wait);
+        return execute(stmt).args(args).executeReturnRows(wait);
     }
 
     /**
      * @see PreparedStatement#executeUpdate()
      */
-    @SuppressWarnings("unused")
-    public final int executeReturnRows(Connection connection, String stmt, Object... args) throws SQLException, BusyException {
-        debugSQLStatement(stmt, args);
-        try (PreparedStatement pstmt = connection.prepareStatement(stmt)) {
-            prepare(connection, pstmt, args);
-            return pstmt.executeUpdate();
-        }
+    public final int executeReturnRows(Connection connection, String stmt, Object... args) throws SQLException {
+        return execute(stmt).args(args).executeReturnRows(connection);
     }
 
     /**
      * @see PreparedStatement#executeUpdate()
      */
     public final int executeReturnGenerated(String stmt, long wait, Object... args) throws SQLException, BusyException {
-        return execute((ConnectionFunction<Integer>) connection -> executeReturnGenerated(connection, stmt, args), wait);
+        return execute(stmt).args(args).executeReturnGenerated(wait);
     }
 
     /**
      * @see PreparedStatement#executeUpdate()
      */
-    public final int executeReturnGenerated(Connection connection, String stmt, Object... args) throws SQLException, BusyException {
-        debugSQLStatement(stmt, args);
-        try (PreparedStatement pstmt = connection.prepareStatement(stmt, Statement.RETURN_GENERATED_KEYS)) {
-            prepare(connection, pstmt, args);
-            pstmt.executeUpdate();
-            try (ResultSet rs = pstmt.getGeneratedKeys()) {
-                if (rs.next()) return rs.getInt(1);
-            }
-        }
-        return -1;
+    public final int executeReturnGenerated(Connection connection, String stmt, Object... args) throws SQLException {
+        return execute(stmt).args(args).executeReturnGenerated(connection);
     }
 
     @SuppressWarnings("unused")
     public final ResultMap executeReturnMap(String stmt, long wait, Object... args) throws SQLException, BusyException {
-        debugSQLStatement(stmt, args);
-        return execute(stmt, preparedStatement -> {
-            try (ResultSet rs = preparedStatement.executeQuery()) {
-                return new ResultMap(this, rs);
-            }
-        }, wait, args);
+        return applyResultSet(stmt, rs -> new ResultMap(this, rs)).args(args).executeQuery(wait);
     }
 
     //
@@ -193,10 +163,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      * Same as {@link ConnectionManager#execute(ConnectionFunction, long)} with no return
      */
     public final void execute(ConnectionConsumer task, long wait) throws SQLException, BusyException {
-        execute(connection -> {
-            task.accept(connection);
-            return null;
-        }, wait);
+        accept(task).executeQuery(wait);
     }
 
     /**
@@ -279,63 +246,33 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }
     }
 
-    /**
-     * @see PreparedStatement#execute()
-     */
+
     public final void execute(String stmt, long wait, Object... args) throws SQLException, BusyException {
-        execute(connection -> {
-            execute(connection, stmt, args);
-        }, wait);
+        execute(stmt).args(args).executeQuery(wait);
     }
 
-    /**
-     * @see PreparedStatement#execute()
-     */
+
     public final void execute(Connection connection, String stmt, Object... args) throws SQLException {
-        debugSQLStatement(stmt, args);
-        try (PreparedStatement pstmt = connection.prepareStatement(stmt)) {
-            prepare(connection, pstmt, args);
-            pstmt.execute();
-        }
+        execute(stmt).args(args).executeQuery(connection);
     }
 
-    @SuppressWarnings("UnusedReturnValue")
-    public final <T> T execute(Connection connection, String statement, PreparedStatementFunction<T> function, Object... args) throws SQLException {
-        debugSQLStatement(statement, args);
-        try (PreparedStatement pstmt = connection.prepareStatement(statement)) {
-            prepare(connection, pstmt, args);
-            try {
-                return function.apply(pstmt);
-            } catch (BusyException e) {
-                // unexpected
-                throw new RuntimeException(e);
-            }
-        }
+
+    public final <T> T execute(Connection connection, String statement, PreparedStatementFunction<T> function) throws SQLException {
+        return applyPreparedStatement(statement, function).executeQuery(connection);
     }
 
-    public final void execute(Connection connection, String statement, PreparedStatementConsumer function, Object... args) throws SQLException {
-        execute(connection, statement, ppreparedStatement -> {
-            function.consume(ppreparedStatement);
-            return null;
-        }, args);
+
+    public final void execute(Connection connection, String statement, PreparedStatementConsumer consumer) throws SQLException {
+        acceptPreparedStatement(statement, consumer).executeQuery(connection);
     }
 
-    @SuppressWarnings("unused")
-    public final void execute(String statement, PreparedStatementConsumer function, long wait, Object... args) throws SQLException, BusyException {
-        execute(statement, preparedStatement -> {
-            function.consume(preparedStatement);
-            return null;
-        }, wait, args);
+    public final void execute(String statement, PreparedStatementConsumer consumer, long wait) throws SQLException, BusyException {
+        acceptPreparedStatement(statement, consumer).executeQuery(wait);
     }
 
-    public final <T> T execute(String statement, PreparedStatementFunction<T> function, long wait, Object... args) throws SQLException, BusyException {
-        debugSQLStatement(statement, args);
-        return execute(connection -> {
-            try (PreparedStatement pstmt = connection.prepareStatement(statement)) {
-                prepare(connection, pstmt, args);
-                return function.apply(pstmt);
-            }
-        }, wait);
+
+    public final <T> T execute(String statement, PreparedStatementFunction<T> function, long wait) throws SQLException, BusyException {
+        return applyPreparedStatement(statement, function).executeQuery(wait);
     }
 
     public <T> void executeBatch(String statement, Collection<T> collection, ThrowingFunction<T, List<?>, SQLException> valueFunction, long wait) throws SQLException, BusyException {
@@ -348,7 +285,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
                 List<?> values = valueFunction.apply(element);
                 for (int i = 0; i < values.size(); i++) {
                     Object value = values.get(i);
-                    prepare(connection, ps, i + 1, value);
+                    prepare(ps, i + 1, value);
                 }
                 ps.addBatch();
             }
@@ -360,6 +297,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     // QUERY
     //
 
+
     @SuppressWarnings("unused")
     public static <T> T query(PreparedStatement preparedStatement, ResultSetFunction<T> resultSetFunction) throws SQLException, BusyException {
         try (ResultSet rs = preparedStatement.executeQuery()) {
@@ -367,30 +305,28 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }
     }
 
+
     @SuppressWarnings({"unused", "UnusedReturnValue"})
     public <T> T query(String statement, ResultSetFunction<T> resultSetFunction, long wait, Object... args) throws SQLException, BusyException {
-        return execute((ConnectionFunction<T>) connection -> query(connection, statement, resultSetFunction, args), wait);
+        return applyResultSet(statement, resultSetFunction).args(args).executeQuery(wait);
     }
+
 
     @SuppressWarnings("unused")
     public <T> void query(String statement, ResultSetConsumer resultSetConsumer, long wait, Object... args) throws SQLException, BusyException {
-        query(statement, resultSet -> {
-            resultSetConsumer.consume(resultSet);
-            return null;
-        }, wait, args);
+        acceptResultSet(statement, resultSetConsumer).args(args).executeQuery(wait);
     }
+
 
     @SuppressWarnings({"unused", "UnusedReturnValue"})
     public final <T> T query(Connection connection, String statement, ResultSetFunction<T> resultSetFunction, Object... args) throws SQLException {
-        return execute(connection, statement, (PreparedStatementFunction<T>) preparedStatement -> query(preparedStatement, resultSetFunction), args);
+        return applyResultSet(statement, resultSetFunction).args(args).executeQuery(connection);
     }
 
+
     @SuppressWarnings({"unused", "UnusedReturnValue"})
-    public final void query(Connection connection, String statement, ResultSetConsumer resultSetFunction, Object... args) throws SQLException {
-        query(connection, statement, (ResultSetFunction<?>) rs -> {
-            resultSetFunction.consume(rs);
-            return null;
-        }, args);
+    public final void query(Connection connection, String statement, ResultSetConsumer resultSetConsumer, Object... args) throws SQLException {
+        acceptResultSet(statement, resultSetConsumer).args(args).executeQuery(connection);
     }
 
     /**
@@ -420,16 +356,6 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         return stream.build();
     }
 
-    public final void setBlob(Connection connection, PreparedStatement statement, int index, byte[] bytes) throws SQLException {
-        if (isMySQL()) {
-            Blob ablob = connection.createBlob();
-            ablob.setBytes(1, bytes);
-            statement.setBlob(index, ablob);
-        } else {
-            statement.setBytes(index, bytes);
-        }
-    }
-
     @SuppressWarnings("unused")
     public final byte[] getBlob(ResultSet rs, String key) throws SQLException {
         if (isMySQL()) {
@@ -456,11 +382,14 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     @SuppressWarnings("unused")
-    public final String concat(String s1, String s2) {
+    public final String concat(String... strings) {
+        if (strings == null || strings.length < 2) {
+            throw new IllegalArgumentException("Must provide 2 or more strings to concatenate");
+        }
         if (isMySQL()) {
-            return "CONCAT(" + s1 + "," + s2 + ")";
+            return "CONCAT(" + String.join(",", strings) + ")";
         } else {
-            return s1 + "||" + s2;
+            return "(" + String.join("||", strings) + ")";
         }
     }
 
@@ -547,19 +476,12 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }
     }
 
-    public void prepare(Connection connection, PreparedStatement preparedStatement, Object... args) throws SQLException {
-        int parameters = -1;
-        try {
-            parameters = preparedStatement.getParameterMetaData().getParameterCount();
-        } catch (SQLFeatureNotSupportedException ignored) {
-        }
-        if (args == null) args = new Object[0];
-        if (parameters > args.length) {
-            throw new IllegalArgumentException(String.format("Not enough arguments provided (%s) for the number of parameters (%s) in the query.", args.length, parameters));
-        }
+    public void prepare(PreparedStatement preparedStatement, Object... args) throws SQLException {
+        if (args == null) return;
+
         for (int i = 0; i < args.length; i++) {
             try {
-                prepare(connection, preparedStatement, i + 1, args[i]);
+                prepare(preparedStatement, i + 1, args[i]);
             } catch (SQLException e) {
                 if (!e.getMessage().contains("index out of range")) throw e;
                 throw new ArrayIndexOutOfBoundsException(i);
@@ -567,7 +489,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }
     }
 
-    public void prepare(Connection connection, PreparedStatement preparedStatement, int index, Object o) throws SQLException {
+    public void prepare(PreparedStatement preparedStatement, int index, Object o) throws SQLException {
         if (o instanceof AbstractEmbeddings embeddings) {
             o = embeddings.toString();
         }
@@ -586,7 +508,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         } else if (o instanceof Byte b) {
             preparedStatement.setByte(index, b);
         } else if (o instanceof byte[] c) {
-            setBlob(connection, preparedStatement, index, c);
+            preparedStatement.setBytes(index, c);
         } else if (o instanceof Double c) {
             preparedStatement.setDouble(index, c);
         } else {
@@ -615,9 +537,10 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     protected void debugSQLStatement(String stmt, Object... args) {
         if (!isDebug()) return;
         final String originalStmt = stmt;
+        if (args == null) args = new Object[0];
         try {
             for (Object arg : args) {
-                stmt = stmt.replaceFirst("\\?", arg.toString().replace("\\", "\\\\"));
+                stmt = stmt.replaceFirst("\\?", Objects.toString(arg).replace("\\", "\\\\"));
             }
         } catch (Exception e) {
             stmt = originalStmt + ": ";
@@ -734,6 +657,70 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         return false;
     }
 
+    /**
+     * Starts the build process for a statement which provides a Connection and expects and return {@param T}
+     */
+    @CheckReturnValue
+    public <T> StatementBuilder<T> apply(ConnectionFunction<T> function) {
+        return new StatementBuilder<>(this, function);
+    }
+
+    /**
+     * Starts the build process for a statement which provides a Connection
+     */
+    @CheckReturnValue
+    public StatementBuilder<Void> accept(ConnectionConsumer consumer) {
+        return apply(rs -> {
+            consumer.accept(rs);
+            return null;
+        });
+    }
+
+    /**
+     * Starts the build process for a statement which provides a PreparedStatement build from the provided statement string and returns {@param T}
+     */
+    @CheckReturnValue
+    public <T> StatementBuilder<T> applyPreparedStatement(String statement, PreparedStatementFunction<T> function) {
+        return new StatementBuilder<>(this, statement, function);
+    }
+
+    /**
+     * Starts the build process for a statement which provides a PreparedStatement build from the provided statement string
+     */
+    @CheckReturnValue
+    public StatementBuilder<Void> acceptPreparedStatement(String statement, PreparedStatementConsumer consumer) {
+        return applyPreparedStatement(statement, rs -> {
+            consumer.consume(rs);
+            return null;
+        });
+    }
+
+    /**
+     * Starts the build process for a statement which provides a ResultSet after executing the provided statement string in the specified way and returns {@param T}
+     */
+    @CheckReturnValue
+    public <T> StatementBuilder<T> applyResultSet(String statement, ResultSetFunction<T> function) {
+        return new StatementBuilder<>(this, statement, function);
+    }
+
+    /**
+     * Starts the build process for a statement which provides a ResultSet after executing the provided statement string in the specified way
+     */
+    @CheckReturnValue
+    public StatementBuilder<Void> acceptResultSet(String statement, ResultSetConsumer consumer) {
+        return applyResultSet(statement, rs -> {
+            consumer.consume(rs);
+            return null;
+        });
+    }
+
+    /**
+     * Starts the build process for a statement which simply executes a statement string
+     */
+    @CheckReturnValue
+    public StatementBuilder<Void> execute(String statement) {
+        return new StatementBuilder<>(this, statement);
+    }
 
     @Override
     public String toString() {
@@ -761,5 +748,17 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
 
     public int getAllEstablishedConnections() {
         return connectionPool.getAllEstablishedConnections();
+    }
+
+    void checkEnoughArguments(PreparedStatement preparedStatement, Object... args) throws SQLException {
+        int parameters = -1;
+        try {
+            parameters = preparedStatement.getParameterMetaData().getParameterCount();
+        } catch (SQLFeatureNotSupportedException ignored) {
+        }
+        if (args == null) args = new Object[0];
+        if (parameters > args.length) {
+            throw new IllegalArgumentException(String.format("Not enough arguments provided (%s) for the number of parameters (%s) in the query.", args.length, parameters));
+        }
     }
 }

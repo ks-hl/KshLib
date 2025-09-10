@@ -2,6 +2,7 @@ package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.concurrent.ConcurrentReference;
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionFunction;
 import dev.kshl.kshlib.misc.BiDiMapCache;
 import dev.kshl.kshlib.misc.UUIDHelper;
 
@@ -207,14 +208,12 @@ public abstract class SQLIDManager<V> {
             return null;
         });
         if (cachedValue != null) return Optional.of(cachedValue);
-        return sql.execute("SELECT value FROM " + table + " WHERE id=?", statement -> {
-            try (ResultSet results = statement.executeQuery()) {
-                if (!results.next()) return Optional.empty();
+        return sql.query("SELECT value FROM " + table + " WHERE id=?", rs -> {
+            if (!rs.next()) return Optional.empty();
 
-                V value = getValue(results, 1);
-                cache(id, value);
-                return Optional.ofNullable(value);
-            }
+            V value = getValue(rs, 1);
+            cache(id, value);
+            return Optional.ofNullable(value);
         }, 30000L, id);
     }
 

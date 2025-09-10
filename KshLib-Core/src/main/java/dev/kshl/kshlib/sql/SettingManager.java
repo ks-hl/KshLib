@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ResultSetFunction;
 import dev.kshl.kshlib.misc.MapCache;
 import dev.kshl.kshlib.misc.Pair;
 import lombok.Getter;

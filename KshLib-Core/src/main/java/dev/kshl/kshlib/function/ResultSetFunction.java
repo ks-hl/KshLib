@@ -1,8 +1,7 @@
-package dev.kshl.kshlib.sql;
+package dev.kshl.kshlib.function;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 
-import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 

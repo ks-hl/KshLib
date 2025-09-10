@@ -1,6 +1,9 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionConsumer;
+import dev.kshl.kshlib.function.ConnectionFunction;
+import dev.kshl.kshlib.function.ConnectionFunctionWithException;
 import lombok.Getter;
 
 import java.sql.Connection;

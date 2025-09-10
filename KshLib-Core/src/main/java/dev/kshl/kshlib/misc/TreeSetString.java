@@ -4,7 +4,7 @@ import java.util.Comparator;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
-public abstract class TreeSetString extends TreeSet<String> {
+public class TreeSetString extends TreeSet<String> {
     public TreeSetString() {
         super();
     }

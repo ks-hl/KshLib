@@ -2,6 +2,7 @@ package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.concurrent.ConcurrentReference;
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionFunctionWithException;
 
 import java.io.File;
 import java.io.FileNotFoundException;

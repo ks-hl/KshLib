@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionFunctionWithException;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
