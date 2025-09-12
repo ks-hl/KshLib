@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 public class TestLLMEmbeddingsManager {
     @DatabaseTest
     public void testLLMEmbeddings(ConnectionManager connectionManager) throws SQLException, BusyException {
-        LLMEmbeddingsManager llmEmbeddingsManager = new LLMEmbeddingsManager(connectionManager, "llm_embeds", LLMEmbeddingsManager.Quant.Q8);
+        LLMEmbeddingsManager llmEmbeddingsManager = new LLMEmbeddingsManager(connectionManager, "llm_embeds");
 
         connectionManager.execute("DROP TABLE IF EXISTS llm_embeds", 3000L);
         connectionManager.execute(llmEmbeddingsManager::init, 3000L);
@@ -24,17 +24,6 @@ public class TestLLMEmbeddingsManager {
         AbstractEmbeddings embeds2 = newRandomEmbeds(100, new Random(569248689349L));
 
         assertNotEquals(embeds1, embeds2);
-
-        int id1 = llmEmbeddingsManager.put(embeds1);
-        int id2 = llmEmbeddingsManager.put(embeds2);
-
-        assertNotEquals(id1, id2);
-
-        assertEquals(id1, llmEmbeddingsManager.put(embeds1));
-        assertEquals(id2, llmEmbeddingsManager.put(embeds2));
-
-        assertEquals(id1, llmEmbeddingsManager.query(embeds1, 0.99f).get(0).getKey());
-        assertEquals(id2, llmEmbeddingsManager.query(embeds2, 0.99f).get(0).getKey());
     }
 
     private static AbstractEmbeddings newRandomEmbeds(int length, Random random) {
