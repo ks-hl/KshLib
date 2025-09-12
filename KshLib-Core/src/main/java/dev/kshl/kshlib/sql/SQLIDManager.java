@@ -73,6 +73,7 @@ public abstract class SQLIDManager<V> {
         String statement = "CREATE TABLE IF NOT EXISTS " + table + " (value " + datatype;
         if (sql.isMySQL()) statement += " unique";
         statement += ", id INTEGER PRIMARY KEY " + sql.autoincrement();
+        statement += getTableMetaDataColumns();
         if (sql.isMySQL()) statement += ")";
         else statement += ", UNIQUE(value))";
         sql.execute(connection, statement);
@@ -95,6 +96,10 @@ public abstract class SQLIDManager<V> {
         sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
 
         initDone = true;
+    }
+
+    private String getTableMetaDataColumns() {
+        return "";
     }
 
 

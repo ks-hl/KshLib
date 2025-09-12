@@ -17,6 +17,7 @@ import java.util.Map;
 
 public class LLMEmbeddingsManager {
     private final ConnectionManager connectionManager;
+    private final SQLIDManager.Str fileNameIDManager;
     private final String table;
 
     public LLMEmbeddingsManager(ConnectionManager connectionManager, String table) {
@@ -25,17 +26,19 @@ public class LLMEmbeddingsManager {
         }
         this.connectionManager = connectionManager;
         this.table = table;
+        this.fileNameIDManager = new SQLIDManager.Str(connectionManager, table + "_files");
     }
 
     public void init(Connection connection) throws SQLException {
         connectionManager.execute(connection,
                 String.format("""
                         CREATE TABLE IF NOT EXISTS %s (
-                            filename varchar(255),
+                            file INT,
                             start_index INT,
                             end_index INT,
                             content varchar(32768),
                             embedding VECTOR(768) NOT NULL
                         )""", table));
+
     }
 }
