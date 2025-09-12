@@ -65,6 +65,7 @@ public class TimeUtilTest {
         assertThrows(NumberFormatException.class, () -> TimeUtil.stringToMillis("1x"));
         assertThrows(NumberFormatException.class, () -> TimeUtil.stringToMillis("1y"));
         assertThrows(NumberFormatException.class, () -> TimeUtil.stringToMillis("1z"));
+        assertThrows(NumberFormatException.class, () -> TimeUtil.stringToMillis("1"));
 
         // Test edge cases
         assertEquals(0, TimeUtil.stringToMillis("0s"));

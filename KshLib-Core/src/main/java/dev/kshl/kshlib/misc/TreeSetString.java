@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.misc;
 
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -24,5 +25,10 @@ public class TreeSetString extends TreeSet<String> {
         public CaseInsensitive() {
             super(Comparator.comparing(String::toLowerCase));
         }
+    }
+
+    @Override
+    public boolean add(String s) {
+        return super.add(Objects.requireNonNull(s));
     }
 }

@@ -48,6 +48,7 @@
                             <artifactSet>
                                 <includes>
                                     <include>io.github.cdimascio:**</include>
+                                    <include>com.zaxxer:HikariCP</include>
                                 </includes>
                             </artifactSet>
                             <minimizeJar>false</minimizeJar>

@@ -90,13 +90,14 @@ public class SQLUsernameManager implements ISQLManager {
         cache(uid, username);
     }
 
-    private void cache(Integer uid, String username) {
+    void cache(Integer uid, String username) {
         if (uid != null) {
             cacheUIDToUsername.put(uid, username);
         }
         if (username != null) {
             cacheUsernameToUID.put(username.toLowerCase(), uid);
         }
+        if (username == null) return;
         synchronized (recentUsernames) {
             recentUsernames.add(username);
         }
@@ -122,16 +123,19 @@ public class SQLUsernameManager implements ISQLManager {
      *
      * @param limit The limit to retrieve from the database. It can grow larger than this as new usernames are added during runtime. 5,000 is a good starting point, this will use around 450KB of memory, so it's not insignificant.
      */
-    public void populateRecentUsernames(int limit) throws SQLException, BusyException {
+    public void populateRecentUsernames(Connection connection, int limit) throws SQLException {
         synchronized (recentUsernames) {
             if (recentUsernamesInitialized) {
                 throw new IllegalStateException("recentUsernames already initialized");
             }
-            sql.query("SELECT username FROM " + table + " ORDER BY time DESC LIMIT %s", rs -> {
+            sql.query(connection, "SELECT username FROM " + table + " ORDER BY time DESC LIMIT ?", rs -> {
                 while (rs.next()) {
-                    recentUsernames.add(rs.getString(1));
+                    String name = rs.getString(1);
+                    if (name == null) continue;
+                    recentUsernames.add(name);
                 }
-            }, 3000L, limit);
+            }, limit);
+            recentUsernamesInitialized = true;
         }
     }
 
@@ -167,10 +171,23 @@ public class SQLUsernameManager implements ISQLManager {
         }
 
         Optional<Pair<Integer, String>> uidName = sql.query(
-                String.format("SELECT uid,username FROM %s WHERE username=? %s ORDER BY time DESC LIMIT 1", table, sql.isMySQL() ? "" : "COLLATE NOCASE"), rs -> {
+                String.format("""
+            SELECT u.uid, u.username
+            FROM %1$s u
+            WHERE u.uid = (
+                SELECT uid FROM %1$s
+                WHERE username = ? %2$s
+                ORDER BY time DESC LIMIT 1
+            )
+            ORDER BY u.time DESC
+            LIMIT 1
+            """, table, sql.isMySQL() ? "" : "COLLATE NOCASE"),
+                rs -> {
                     if (!rs.next()) return Optional.empty();
                     return Optional.of(new Pair<>(rs.getInt(1), rs.getString(2)));
-                }, 3000L, username);
+                },
+                3000L, username
+        );
 
         cache(uidName.map(Pair::getLeft).orElse(null), uidName.map(Pair::getRight).orElse(username));
 

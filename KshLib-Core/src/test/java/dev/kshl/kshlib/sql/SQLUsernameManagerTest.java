@@ -15,7 +15,12 @@ public class SQLUsernameManagerTest {
     @DatabaseTest
     public void testSQLUsernameManager(ConnectionManager connectionManager) throws SQLException, BusyException {
         connectionManager.execute("DROP TABLE IF EXISTS usernames", 3000L);
-        SQLUsernameManager usernameManager = new SQLUsernameManager(connectionManager, "usernames");
+        SQLUsernameManager usernameManager = new SQLUsernameManager(connectionManager, "usernames") {
+            @Override
+            void cache(Integer uid, String username) {
+                // no cache
+            }
+        };
 
         // Initialize the table
         connectionManager.execute(usernameManager::init, 3000L);
@@ -69,8 +74,9 @@ public class SQLUsernameManagerTest {
         assertEquals(4, retrievedUID.get().intValue()); // Should return the updated UID (4)
 
         // Ensure old username still returns the UID
-        retrievedUID = usernameManager.getUID("testuser");
-        assertEquals(4, retrievedUID.orElseThrow());
+        var retrieved = usernameManager.getUIDAndUsername("testuser").orElseThrow();
+        assertEquals(4, retrieved.getLeft());
+        assertEquals("newuser", retrieved.getRight());
 
         // Ensure the username associated with UID 4 is updated
         retrievedUsername = usernameManager.getUsername(4);
