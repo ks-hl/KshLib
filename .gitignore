@@ -23,3 +23,4 @@ deploy.cmd
 */test.db
 .env
 /out.log
+/KshLib-Core/content/

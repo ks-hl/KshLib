@@ -21,7 +21,7 @@ public class SQLAPIKeyManager {
         if (length < 32) throw new IllegalArgumentException("Can't have token length < 32");
         this.length = length;
         this.connectionManager = connectionManager;
-        this.table = table;
+        this.table = ConnectionManager.validateTableName(table);
         this.passwordManager = new SQLPasswordManager(connectionManager, table, SQLPasswordManager.Type.PASSWORD) {
             @Override
             protected String getCreateTableStatement() {

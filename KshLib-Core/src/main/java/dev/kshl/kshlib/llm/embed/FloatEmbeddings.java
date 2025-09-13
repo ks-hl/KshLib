@@ -1,5 +1,7 @@
 package dev.kshl.kshlib.llm.embed;
 
+import lombok.Getter;
+
 import javax.annotation.Nonnull;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -7,6 +9,7 @@ import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
 
+@Getter
 public class FloatEmbeddings extends AbstractEmbeddings {
 
     private final float[] embeddings;

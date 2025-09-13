@@ -27,7 +27,7 @@ public class SQLUsernameManager implements ISQLManager {
         validateTableName(table);
 
         this.sql = sql;
-        this.table = table;
+        this.table = ConnectionManager.validateTableName(table);
     }
 
     public void init(Connection connection) throws SQLException {

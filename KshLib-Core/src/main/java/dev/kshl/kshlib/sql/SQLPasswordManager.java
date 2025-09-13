@@ -35,7 +35,7 @@ public class SQLPasswordManager {
 
     public SQLPasswordManager(ConnectionManager connectionManager, String table, Type type) throws NoSuchAlgorithmException {
         this.connectionManager = connectionManager;
-        this.table = table;
+        this.table = ConnectionManager.validateTableName(table);
         this.type = type;
 
         HashPBKDF2.checkAlgorithm();

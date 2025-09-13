@@ -761,4 +761,13 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
             throw new IllegalArgumentException(String.format("Not enough arguments provided (%s) for the number of parameters (%s) in the query.", args.length, parameters));
         }
     }
+
+    private static final String TABLE_NAME_REGEX = "[a-zA-Z0-9_]+";
+
+    public static String validateTableName(String tableName) {
+        if (!tableName.matches(TABLE_NAME_REGEX)) {
+            throw new IllegalArgumentException("Invalid table name: " + tableName + ", must match " + TABLE_NAME_REGEX);
+        }
+        return tableName;
+    }
 }

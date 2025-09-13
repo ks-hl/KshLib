@@ -28,7 +28,7 @@ public abstract class SettingManager<T> {
         this.multiple = multiple;
         if (!table.matches("[\\w_]+")) throw new IllegalArgumentException("Invalid table name " + table);
         this.sql = sql;
-        this.table = table;
+        this.table = ConnectionManager.validateTableName(table);
     }
 
     public void init(Connection connection) throws SQLException {

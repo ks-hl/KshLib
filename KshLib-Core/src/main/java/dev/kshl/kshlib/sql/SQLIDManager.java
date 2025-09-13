@@ -28,41 +28,13 @@ public abstract class SQLIDManager<V> {
         this.datatype = datatype;
         if (!table.matches("[\\w_]+")) throw new IllegalArgumentException("Invalid table name " + table);
         this.sql = sql;
-        this.table = table;
-    }
-
-    private boolean needsMigration(Connection connection) throws SQLException {
-        if (!sql.tableExists(connection, table)) return false;
-
-        try (Statement stmt = connection.createStatement()) {
-            if (sql.isMySQL()) {
-                String query = "SELECT CONSTRAINT_TYPE " +
-                        "FROM information_schema.TABLE_CONSTRAINTS " +
-                        "WHERE TABLE_NAME = '" + table + "' " +
-                        "AND TABLE_SCHEMA = DATABASE()";
-                ResultSet rs = stmt.executeQuery(query);
-                while (rs.next()) {
-                    if ("UNIQUE".equalsIgnoreCase(rs.getString("CONSTRAINT_TYPE"))) {
-                        return false;
-                    }
-                }
-            } else {
-                String query = "PRAGMA index_list(" + table + ")";
-                ResultSet rs = stmt.executeQuery(query);
-                while (rs.next()) {
-                    if (rs.getBoolean("unique")) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
+        this.table = ConnectionManager.validateTableName(table);
     }
 
     public void init(Connection connection) throws SQLException {
         if (initDone) throw new IllegalStateException("Initialization is already complete.");
 
-        boolean migrationRequired = needsMigration(connection);
+        boolean migrationRequired = sql.tableExists(connection, table) && !sql.uniqueConstraintExists(connection, table, "id");
 
         if (migrationRequired) {
             System.out.println("Migrating ID table `" + table + "` to add unique constraint");
@@ -70,13 +42,14 @@ public abstract class SQLIDManager<V> {
             sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
         }
 
-        String statement = "CREATE TABLE IF NOT EXISTS " + table + " (value " + datatype;
-        if (sql.isMySQL()) statement += " unique";
-        statement += ", id INTEGER PRIMARY KEY " + sql.autoincrement();
-        statement += getTableMetaDataColumns();
-        if (sql.isMySQL()) statement += ")";
-        else statement += ", UNIQUE(value))";
-        sql.execute(connection, statement);
+        String metaData = getTableMetaDataColumns().trim();
+        if (!metaData.startsWith(",")) metaData = "," + metaData;
+        sql.execute(connection, String.format("""
+                CREATE TABLE IF NOT EXISTS %s (
+                    value %s,
+                    id INTEGER PRIMARY KEY %s UNIQUE
+                    %s
+                )""", table, datatype, sql.autoincrement(), metaData));
 
         if (migrationRequired) {
             sql.query(connection, "SELECT id,value FROM " + table + "_temp ORDER BY id ASC", rs -> {
@@ -98,7 +71,7 @@ public abstract class SQLIDManager<V> {
         initDone = true;
     }
 
-    private String getTableMetaDataColumns() {
+    protected String getTableMetaDataColumns() {
         return "";
     }
 
@@ -254,7 +227,11 @@ public abstract class SQLIDManager<V> {
     public static class Str extends SQLIDManager<String> {
 
         public Str(ConnectionManager sql, String table) {
-            super(sql, table, "TEXT");
+            this(sql, table, 255);
+        }
+
+        public Str(ConnectionManager sql, String table, int varcharLength) {
+            super(sql, table, "VARCHAR(" + varcharLength + ")");
         }
 
         @Override

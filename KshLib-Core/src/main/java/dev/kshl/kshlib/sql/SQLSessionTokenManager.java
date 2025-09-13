@@ -27,7 +27,7 @@ public class SQLSessionTokenManager {
 
     public SQLSessionTokenManager(ConnectionManager connectionManager, String table, long sessionDuration, boolean ipSticky) throws NoSuchAlgorithmException {
         this.connectionManager = connectionManager;
-        this.table = table;
+        this.table = ConnectionManager.validateTableName(table);
         this.sessionDuration = sessionDuration;
         this.ipSticky = ipSticky;
 

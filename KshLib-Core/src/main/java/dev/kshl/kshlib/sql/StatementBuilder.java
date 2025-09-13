@@ -47,7 +47,12 @@ public class StatementBuilder<T> {
         this(FunctionType.VOID, connectionManager, statement, null, null, rs -> null);
     }
 
-    private StatementBuilder(FunctionType functionType, ConnectionManager connectionManager, String statement, ConnectionFunction<T> connectionFunction, PreparedStatementFunction<T> preparedStatementFunction, ResultSetFunction<T> resultSetFunction) {
+    private StatementBuilder(FunctionType functionType,
+                             ConnectionManager connectionManager,
+                             String statement,
+                             ConnectionFunction<T> connectionFunction,
+                             PreparedStatementFunction<T> preparedStatementFunction,
+                             ResultSetFunction<T> resultSetFunction) {
         this.functionType = functionType;
         this.connectionManager = connectionManager;
         if (resultSetFunction != null) {
@@ -157,7 +162,6 @@ public class StatementBuilder<T> {
 
     private PreparedStatementFunction<T> adaptToPreparedStatement(ResultSetFunction<T> resultSetFunction) {
         return preparedStatement -> {
-            // TODO assign args
             connectionManager.checkEnoughArguments(preparedStatement, args);
             if (action == Action.GENERATED) {
                 preparedStatement.execute();

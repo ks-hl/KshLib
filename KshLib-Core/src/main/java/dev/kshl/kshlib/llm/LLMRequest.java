@@ -1,5 +1,6 @@
 package dev.kshl.kshlib.llm;
 
+import lombok.Getter;
 import org.json.JSONObject;
 
 import javax.annotation.Nullable;
@@ -7,8 +8,14 @@ import java.time.Duration;
 
 public class LLMRequest {
 
+    @Getter
     private final String model;
+    @Getter
     private final String content;
+    @Getter
+    private String system;
+    @Getter
+    private boolean think;
 
     private @Nullable Long seed;
     private @Nullable Integer contextLength;
@@ -34,12 +41,14 @@ public class LLMRequest {
         return this;
     }
 
-    public String getModel() {
-        return model;
+    public LLMRequest system(@Nullable String system) {
+        this.system = system;
+        return this;
     }
 
-    public String getContent() {
-        return content;
+    public LLMRequest think(boolean think) {
+        this.think = think;
+        return this;
     }
 
     @Nullable
@@ -61,6 +70,8 @@ public class LLMRequest {
         JSONObject json = new JSONObject();
         json.put("stream", false);
         json.put("model", getModel());
+        json.put("system", getSystem());
+        json.put("think", isThink());
         putContent(json);
         json.put("options", new JSONObject()
                 .put("seed", getSeed())

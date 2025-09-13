@@ -1,12 +1,15 @@
 package dev.kshl.kshlib.misc;
 
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.ToString;
 
 import java.util.Objects;
 
 @Setter
 @Getter
+@ToString
 public class Pair<K, V> {
     private K left;
     private V right;

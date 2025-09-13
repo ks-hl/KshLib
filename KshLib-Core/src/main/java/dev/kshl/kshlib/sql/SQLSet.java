@@ -18,7 +18,7 @@ public abstract class SQLSet<T> {
 
     private SQLSet(ConnectionManager connectionManager, String table, String type, boolean cache) {
         this.connectionManager = connectionManager;
-        this.table = table;
+        this.table = ConnectionManager.validateTableName(table);
         this.type = type;
         this.cache = cache ? new MapCache<>(3600000L, 3600000L, true) : null;
     }

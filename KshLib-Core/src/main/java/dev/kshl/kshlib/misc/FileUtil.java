@@ -10,14 +10,20 @@ import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Scanner;
+import java.util.Set;
 
 public class FileUtil {
     @SuppressWarnings("UnusedReturnValue")
@@ -71,7 +77,7 @@ public class FileUtil {
         return sb.toString();
     }
 
-    public static boolean delete(File file) {
+    public static boolean delete(File file) throws IOException {
         if (!file.exists()) return false;
 
         walkFileTree(file, -1, file1 -> {
@@ -82,20 +88,29 @@ public class FileUtil {
         return !file.exists();
     }
 
-//    public static void walkFileTree(File file, int depthLimit, Consumer<File> fileConsumer) throws IOException {
-//        walkFileTree(file, depthLimit, (ThrowingConsumer<File, IOException>) fileConsumer::accept);
-//    }
+    public static <E extends Exception> void walkFileTree(File file, int depthLimit, ThrowingConsumer<File, E> fileConsumer) throws E, IOException {
+        walkFileTree(file, depthLimit, false, fileConsumer);
+    }
 
-    public static <E extends Exception> void walkFileTree(File file, int depthLimit, ThrowingConsumer<File, E> fileConsumer) throws E {
-        fileConsumer.accept(file);
+    public static <E extends Exception> void walkFileTree(File file, int depthLimit, boolean followLinks, ThrowingConsumer<File, E> fileConsumer) throws E, IOException {
+        walkFileTree(file.toPath(), depthLimit, followLinks, fileConsumer, new HashSet<>());
+    }
+
+    private static <E extends Exception> void walkFileTree(Path path, int depthLimit, boolean followLinks, ThrowingConsumer<File, E> fileConsumer, Set<Path> visited) throws E, IOException {
+        if (!visited.add(path.toRealPath(LinkOption.NOFOLLOW_LINKS))) return; // Already visited
+
+        fileConsumer.accept(path.toFile());
 
         if (depthLimit == 0) return;
 
-        if (file.isDirectory()) {
-            File[] files = file.listFiles();
-            if (files == null) return;
-            for (File subFile : files) {
-                walkFileTree(subFile, depthLimit - 1, fileConsumer);
+        if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(path)) {
+                for (Path subPath : stream) {
+                    if (!followLinks && Files.isSymbolicLink(subPath)) {
+                        continue; // skip symlinks
+                    }
+                    walkFileTree(subPath, depthLimit - 1, followLinks, fileConsumer, visited);
+                }
             }
         }
     }
