@@ -1,8 +1,8 @@
 package dev.kshl.kshlib.llm;
 
-import dev.kshl.kshlib.crypto.HashSHA256;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.llm.embed.FloatEmbeddings;
+import dev.kshl.kshlib.log.ILogger;
 import dev.kshl.kshlib.misc.FileUtil;
 import dev.kshl.kshlib.sql.EmbeddingsDAO;
 
@@ -11,7 +11,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,23 +18,22 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.function.Consumer;
 
 public class EmbeddingsManager {
     private final String model;
     private final int contextLength;
     private final OllamaAPI ollamaAPI;
     private final EmbeddingsDAO embeddingsDAO;
-    private final Consumer<String> output;
+    private final ILogger logger;
     private final int tokensPerBlock;
-    private static final float CHARS_PER_TOKEN = 4;
+    private static final float CHARS_PER_TOKEN = 3.5f;
 
-    public EmbeddingsManager(String model, int contextLength, OllamaAPI ollamaAPI, EmbeddingsDAO embeddingsDAO, Consumer<String> output, int tokensPerBlock) {
+    public EmbeddingsManager(String model, int contextLength, OllamaAPI ollamaAPI, EmbeddingsDAO embeddingsDAO, ILogger logger, int tokensPerBlock) {
         this.model = model;
         this.contextLength = contextLength;
         this.ollamaAPI = ollamaAPI;
         this.embeddingsDAO = embeddingsDAO;
-        this.output = output;
+        this.logger = logger;
         this.tokensPerBlock = tokensPerBlock;
     }
 
@@ -46,7 +44,7 @@ public class EmbeddingsManager {
         }
         for (String file : embeddingsDAO.getFiles()) {
             if (!paths.contains(file)) {
-                print("Dropping old file " + file);
+                logger.info("Dropping old file " + file);
                 embeddingsDAO.dropFile(file);
             }
         }
@@ -59,8 +57,7 @@ public class EmbeddingsManager {
                     try {
                         updateFile(file);
                     } catch (Throwable e) {
-                        System.err.println("An error occurred embedding file " + file.getName());
-                        e.printStackTrace();
+                        logger.print("An error occurred embedding file " + file.getName(), e);
                     }
                 }
             });
@@ -76,29 +73,19 @@ public class EmbeddingsManager {
         }
     }
 
-    private void print(String msg) {
-        output.accept(msg);
-    }
-
     public void updateFile(File file) throws SQLException, BusyException, IOException {
         String path = getPathRelativeToWorkingDirectory(file);
-        byte[] currentHash;
-        try {
-            currentHash = HashSHA256.hash(file);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
+        byte[] currentHash = FileUtil.getSHA256Hash(file.getCanonicalPath());
         byte[] databaseHash = embeddingsDAO.getFileHash(path);
         boolean sameHash = Arrays.equals(currentHash, databaseHash);
         String msg = "Checking file " + path + "... ";
         if (databaseHash == null) {
             msg += "file not in database, embedding file.";
-        } else if (sameHash) {
-            msg += "same hash, no action needed.";
-        } else {
+            logger.info(msg);
+        } else if (!sameHash) {
             msg += "different hash, re-embedding file.";
+            logger.info(msg);
         }
-        print(msg);
         if (sameHash) return;
         // New or changed file
         embeddingsDAO.dropFile(path);
@@ -110,35 +97,50 @@ public class EmbeddingsManager {
         int defaultLength = Math.round(Math.min(contextLength, tokensPerBlock) * CHARS_PER_TOKEN * 0.8f); // Expect to use approximately 80% of context length
         int charOverlap = Math.round(100 * CHARS_PER_TOKEN); // 100 token overlap between blocks
 
+        int blockIndex = 1;
+
         for (int endIndex = defaultLength; ; endIndex += defaultLength) {
+            if (blockIndex == 1 && fileLength < contextLength * CHARS_PER_TOKEN * 0.75f) {
+                endIndex = Integer.MAX_VALUE; // If the entire file can fit in 75% of the context, just embed the entire file.
+            }
             String block;
             EmbedResponse response;
             for (int i = 0; ; i++) {
                 if (i > 9 || endIndex <= startIndex) {
                     throw new IllegalStateException("Unable to find small enough block. Context length must be incorrect, likely by at least a factor of 10.");
                 }
-                block = path + "\n\n" + content.substring(startIndex, Math.min(fileLength, endIndex));
-                response = getEmbeddings(block);
+                block = "/" + path + (endIndex == Integer.MAX_VALUE ? "" : ("[" + blockIndex + "]")) + "\n\n";
+                if (blockIndex > 1) {
+                    block += "... ";
+                }
+                block += content.substring(startIndex, Math.min(fileLength, endIndex));
+                if (endIndex < fileLength) {
+                    block += " ...";
+                }
+                response = getEmbeddings("search_document: " + block);
 
                 if (response.prompt_eval_count() < contextLength) break; // Ensures nothing was truncated
 
-                endIndex -= Math.round(defaultLength * 0.1f); // Roll back the endIndex to have fewer tokens
+                logger.warning(path + String.format(" Too many tokens. start=%s, end=%s, block.len=%s", startIndex, endIndex, block.length()));
+                if (endIndex == Integer.MAX_VALUE) endIndex = defaultLength; // If embedding the entire file fails, go back to trying blocks.
+                else endIndex -= Math.round(defaultLength * 0.1f); // Roll back the endIndex to have fewer tokens
             }
 
             if (!(response.embeddings() instanceof FloatEmbeddings floatEmbeddings)) {
                 throw new IllegalArgumentException("Unexpected embeddings: " + response.embeddings().getClass().getName());
             }
 
-            embeddingsDAO.upsertFileBlock(path, startIndex, endIndex, block, floatEmbeddings.getEmbeddings());
+            embeddingsDAO.upsertFileBlock(path, path.split("/")[1], startIndex, endIndex, block, floatEmbeddings.getEmbeddings());
 
             if (endIndex >= fileLength) break;
             startIndex = endIndex - charOverlap;
+            blockIndex++;
         }
 
         if (embeddingsDAO.upsertFileHash(path, currentHash)) { // Done at the end in-case it doesn't complete
-            print("Saved hash");
+            logger.info("Saved hash");
         } else {
-            print("Failed to save hash");
+            logger.warning("Failed to upsert hash");
         }
     }
 
@@ -147,7 +149,7 @@ public class EmbeddingsManager {
     }
 
     public float[] getEmbeddingsFloat(String text) throws IOException {
-        var response = getEmbeddings(text);
+        var response = getEmbeddings("search_query: " + text);
         if (!(response.embeddings() instanceof FloatEmbeddings floatEmbeddings)) {
             throw new IllegalArgumentException("Unexpected embeddings: " + response.embeddings().getClass().getName());
         }

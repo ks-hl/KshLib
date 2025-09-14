@@ -17,7 +17,7 @@ public class FileUtilTest {
         boolean ignored = file.delete();
         FileUtil.write(file, content);
         assertEquals(content, FileUtil.read(file));
-        assertEquals("9b7a89a068576f5d676de2f840c0b880dda885884178753819240a5176cdadd3", FileUtil.getSHA256Hash(file));
+        assertEquals("9b7a89a068576f5d676de2f840c0b880dda885884178753819240a5176cdadd3", FileUtil.getSHA256HashHex(file));
     }
 
     @Test

@@ -11,7 +11,6 @@ import javax.annotation.Nullable;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,10 +42,10 @@ public abstract class SQLIDManager<V> {
         }
 
         String metaData = getTableMetaDataColumns().trim();
-        if (!metaData.startsWith(",")) metaData = "," + metaData;
+        if (!metaData.isBlank() && !metaData.startsWith(",")) metaData = "," + metaData;
         sql.execute(connection, String.format("""
                 CREATE TABLE IF NOT EXISTS %s (
-                    value %s,
+                    value %s UNIQUE,
                     id INTEGER PRIMARY KEY %s UNIQUE
                     %s
                 )""", table, datatype, sql.autoincrement(), metaData));

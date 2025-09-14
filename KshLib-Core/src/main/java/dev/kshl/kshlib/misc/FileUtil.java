@@ -1,7 +1,5 @@
 package dev.kshl.kshlib.misc;
 
-import dev.kshl.kshlib.function.ThrowingConsumer;
-
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.File;
@@ -10,20 +8,17 @@ import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Scanner;
-import java.util.Set;
+import java.util.stream.Stream;
 
 public class FileUtil {
     @SuppressWarnings("UnusedReturnValue")
@@ -54,11 +49,11 @@ public class FileUtil {
         }
     }
 
-    public static String getSHA256Hash(File file) throws IOException {
-        return getSHA256Hash(file.getAbsolutePath());
+    public static String getSHA256HashHex(File file) throws IOException {
+        return Bits.encodeToHex(getSHA256Hash(file.getAbsolutePath()));
     }
 
-    public static String getSHA256Hash(String filePath) throws IOException {
+    public static byte[] getSHA256Hash(String filePath) throws IOException {
         MessageDigest md;
         try {
             md = MessageDigest.getInstance("SHA-256");
@@ -66,53 +61,28 @@ public class FileUtil {
             throw new IllegalArgumentException(e);
         }
 
-        try (InputStream is = new FileInputStream(filePath); DigestInputStream dis = new DigestInputStream(is, md)) {
-            //noinspection StatementWithEmptyBody
-            while (dis.read() != -1) ; //empty loop to clear the data
-            md = dis.getMessageDigest();
+        try (InputStream is = new FileInputStream(filePath);
+             DigestInputStream dis = new DigestInputStream(is, md)) {
+
+            byte[] buffer = new byte[8192]; // 8 KB buffer
+            while (dis.read(buffer) != -1) ;
         }
 
-        StringBuilder sb = new StringBuilder();
-        for (byte b : md.digest()) sb.append(String.format("%02x", b));
-        return sb.toString();
+        return md.digest();
     }
 
     public static boolean delete(File file) throws IOException {
         if (!file.exists()) return false;
 
-        walkFileTree(file, -1, file1 -> {
-            if (file1.isFile()) file1.delete();
-        });
-        walkFileTree(file, -1, File::delete);
+        try (Stream<Path> paths = Files.walk(file.toPath())) {
+            paths.forEach(path -> {
+                File file1 = path.toFile();
+                if (file1.isFile()) file1.delete();
+            });
+            paths.forEach(path -> path.toFile().delete());
+        }
 
         return !file.exists();
-    }
-
-    public static <E extends Exception> void walkFileTree(File file, int depthLimit, ThrowingConsumer<File, E> fileConsumer) throws E, IOException {
-        walkFileTree(file, depthLimit, false, fileConsumer);
-    }
-
-    public static <E extends Exception> void walkFileTree(File file, int depthLimit, boolean followLinks, ThrowingConsumer<File, E> fileConsumer) throws E, IOException {
-        walkFileTree(file.toPath(), depthLimit, followLinks, fileConsumer, new HashSet<>());
-    }
-
-    private static <E extends Exception> void walkFileTree(Path path, int depthLimit, boolean followLinks, ThrowingConsumer<File, E> fileConsumer, Set<Path> visited) throws E, IOException {
-        if (!visited.add(path.toRealPath(LinkOption.NOFOLLOW_LINKS))) return; // Already visited
-
-        fileConsumer.accept(path.toFile());
-
-        if (depthLimit == 0) return;
-
-        if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(path)) {
-                for (Path subPath : stream) {
-                    if (!followLinks && Files.isSymbolicLink(subPath)) {
-                        continue; // skip symlinks
-                    }
-                    walkFileTree(subPath, depthLimit - 1, followLinks, fileConsumer, visited);
-                }
-            }
-        }
     }
 
     public static class CSV {

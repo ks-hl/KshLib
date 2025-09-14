@@ -511,6 +511,8 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
             preparedStatement.setBytes(index, c);
         } else if (o instanceof Double c) {
             preparedStatement.setDouble(index, c);
+        } else if (o instanceof Float f) {
+            preparedStatement.setFloat(index, f);
         } else {
             throw new IllegalArgumentException(o.toString());
         }

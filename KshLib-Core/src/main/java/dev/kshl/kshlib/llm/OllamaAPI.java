@@ -83,7 +83,7 @@ public class OllamaAPI extends NetUtilInterval {
 
         LLMResponse response = new OllamaAPI("http://10.0.70.105:11434/").generate(new LLMRequest("qwen2.5:3b",
                 "Respond only with the corrected text. Correct the spelling in this text: what is your favourite collourrr??"));
-        System.out.println(response.getTokensPerSecond() + " t/s");
+        System.out.println(response.getEvalTokensPerSecond() + " t/s");
         System.out.println(response.created_at().toInstant().toEpochMilli());
         System.out.println(System.currentTimeMillis());
         System.out.println(response.created_at().withZoneSameInstant(ZoneId.systemDefault()).format(TimeUtil.ENTRY_TIME_FORMAT));

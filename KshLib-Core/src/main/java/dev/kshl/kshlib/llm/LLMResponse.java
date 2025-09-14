@@ -61,7 +61,11 @@ public record LLMResponse(
         return new LLMResponse(created_at, model, load_duration, prompt_eval_count, prompt_eval_duration, eval_count, eval_duration, total_duration, response);
     }
 
-    public double getTokensPerSecond() {
-        return eval_count() * 1000D / eval_duration().toMillis();
+    public double getPromptTokensPerSecond() {
+        return prompt_eval_count() * 1E9D / prompt_eval_duration().toNanos();
+    }
+
+    public double getEvalTokensPerSecond() {
+        return eval_count() * 1E9D / eval_duration().toNanos();
     }
 }
