@@ -56,7 +56,7 @@ public abstract class SQLIDManager<V> {
                     V value = getValue(rs, 2);
                     int id = rs.getInt(1);
                     try {
-                        sql.execute(connection, "INSERT INTO " + table + " (id,value) VALUES (?,?)", id, value);
+                        sql.execute(connection, "INSERT INTO " + table + " (id,value) VALUES (?,?)", id, toDatabaseObject(value));
                     } catch (SQLException e) {
                         if (ConnectionManager.isConstraintViolation(e)) {
                             System.err.println("Found duplicate ID `" + id + "` for value `" + value + "` in table " + table);

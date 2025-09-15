@@ -25,7 +25,9 @@ import java.util.List;
 import java.util.stream.Stream;
 
 public class TestEmbeddingsDAO {
-    private static final int contextWidth = 1024 * 6;
+    private static final String query = "How do I view my chunk borders of my claim";
+    private static final String model = "qwen3:4b-instruct";
+    private static final int contextWidth = 1024 * 8;
     private static final OllamaAPI ollamaAPI = new OllamaAPI("http://10.0.70.105:11434");
 
     private ConnectionManager connectionManager;
@@ -57,8 +59,10 @@ public class TestEmbeddingsDAO {
             });
         }
         files.sort(Comparator.comparing(File::getAbsolutePath));
-        String query = "Does someone know if you can see your town borders somewhere?";
+        System.out.println("Embedding files...");
         embeddingsManager.setEmbedFiles(files);
+
+        System.out.println("Expanding query...");
 
         JSONObject expanded = expandQuery(query);
         String topic = expanded.getString("topic");
@@ -91,8 +95,14 @@ public class TestEmbeddingsDAO {
                     - How to do something with Towny → towny
                     - How to brew something such as drinks or other alcohol → brewery
                     - AFK farming and chunk-loaders → rules
+                    - Other questions about commands → info
+                    - Topic not listed → {leave empty}
                     """;
-            var response = ollamaAPI.generate(new LLMRequest("gemma3:12b", query).system(systemPrompt).contextLength(contextWidth).think(false));
+            var response = ollamaAPI.generate(new LLMRequest(model, query)
+                    .system(systemPrompt)
+                    .contextLength(contextWidth)
+                    .think(false)
+            );
             System.out.println(String.format("t/s: %s/%s", Formatter.toString(response.getPromptTokensPerSecond(), 1, true, true), Formatter.toString(response.getEvalTokensPerSecond(), 1, true, true)));
             try {
                 String responseText = response.response().trim();
@@ -142,7 +152,11 @@ public class TestEmbeddingsDAO {
                 """;
 
         System.out.println("   " + String.format(prompt, query, context.stream().map(s -> s.replaceAll("[\n\r]+", "\\\\n")).reduce((a, b) -> a + "\n" + b).orElse("")).replaceAll("[\n\r]+", "\n   "));
-        var response = ollamaAPI.generate(new LLMRequest("qwen3:8b", String.format(prompt, query, context)).system(systemPrompt).contextLength(contextWidth).think(false));
+        var response = ollamaAPI.generate(new LLMRequest(model, String.format(prompt, query, context))
+                .system(systemPrompt)
+                .contextLength(contextWidth)
+                .think(false)
+        );
         System.out.println("Prompt tokens:" + response.prompt_eval_count());
         System.out.println(String.format("t/s: %s/%s", Formatter.toString(response.getPromptTokensPerSecond(), 1, true, true), Formatter.toString(response.getEvalTokensPerSecond(), 1, true, true)));
         System.out.println("RESPONSE: " + response.response() + "\nEND RESPONSE");

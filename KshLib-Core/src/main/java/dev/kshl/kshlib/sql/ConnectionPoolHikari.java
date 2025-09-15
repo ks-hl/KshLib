@@ -18,6 +18,7 @@ public class ConnectionPoolHikari extends ConnectionPool {
         super();
 
         HikariConfig config = new HikariConfig();
+        config.setDriverClassName("com.mysql.cj.jdbc.Driver");
         config.setJdbcUrl("jdbc:mysql://" + host + "/" + database);
         config.setUsername(user);
         config.setPassword(pwd);

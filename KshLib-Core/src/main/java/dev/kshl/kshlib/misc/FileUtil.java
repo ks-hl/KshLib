@@ -74,12 +74,15 @@ public class FileUtil {
     public static boolean delete(File file) throws IOException {
         if (!file.exists()) return false;
 
+        List<File> directories = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(file.toPath())) {
             paths.forEach(path -> {
                 File file1 = path.toFile();
-                if (file1.isFile()) file1.delete();
+                if (file1.isFile()) {
+                    file1.delete();
+                } else directories.add(file1);
             });
-            paths.forEach(path -> path.toFile().delete());
+            directories.forEach(File::delete);
         }
 
         return !file.exists();
