@@ -23,6 +23,7 @@ public class NetUtilTest {
     }
 
     @Test
+    @Timeout(5)
     public void testSSLFailures() throws IOException {
         NetUtil.get("https://badssl.com/").request();
         assertThrows(SSLException.class, () -> NetUtil.get("https://expired.badssl.com/").request());

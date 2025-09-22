@@ -13,7 +13,7 @@ public class MySQLConnectionPoolTest {
     public void testMySQLPool() throws Exception {
         ConnectionManager connectionManager;
         try {
-            connectionManager = new ConnectionManager("localhost:3306", "test", "test", "password", 10) {
+            connectionManager = new ConnectionManager("10.0.70.110:3306", "test", "test", "password", 10) {
                 @Override
                 protected void init(Connection connection) throws SQLException {
                 }

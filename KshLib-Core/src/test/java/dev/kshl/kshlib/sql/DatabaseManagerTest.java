@@ -60,7 +60,7 @@ public class DatabaseManagerTest {
         sqliteFile.delete();
         connectionManagerList.add(new TestConnectionManager(sqliteFile));  // SQLite)
         try {
-            connectionManagerList.add(new TestConnectionManager("localhost:3306", "test", "test", "password", 8));  // MySQL)
+            connectionManagerList.add(new TestConnectionManager("10.0.70.110:3306", "test", "test", "password", 8));  // MySQL)
         } catch (SQLException e) {
             System.err.println("MySQL db not found or error occurred");
             e.printStackTrace();
