@@ -6,7 +6,6 @@ import javax.annotation.Nullable;
 
 public class BusyException extends Exception {
     public BusyException(@Nullable StackTraceElement[] stack, long threadID, long heldSince) {
-        //noinspection NullableProblems
         this("Resource busy, currently held by " + (threadID < 0 ? "none" : ("Thread #" + threadID)) + ", held for " + (System.currentTimeMillis() - heldSince) + "ms" + //
                 (stack != null ? ("\n" + StackUtil.format(stack, 50) + "\n==== End held by ====\n") : ""));
     }

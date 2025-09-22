@@ -22,20 +22,6 @@ public class FloatEmbeddings extends AbstractEmbeddings {
     }
 
     @Override
-    protected AbstractEmbeddings construct(List<Float> embeddings) {
-        return new ShortEmbeddings(embeddings);
-    }
-
-    @Override
-    public byte[] getBytes() {
-        ByteBuffer buffer = ByteBuffer.allocate(size() * 4);
-        for (Float embedding : this.embeddings) {
-            buffer.putFloat(embedding);
-        }
-        return buffer.array();
-    }
-
-    @Override
     public int size() {
         return this.embeddings.length;
     }
@@ -54,22 +40,5 @@ public class FloatEmbeddings extends AbstractEmbeddings {
     @Nonnull
     public Iterator<Float> iterator() {
         return new FloatIterator(this.embeddings);
-    }
-
-    public static FloatEmbeddings fromBytes(byte[] bytes) {
-        List<Float> embeds = new ArrayList<>();
-        for (int i = 0; i < bytes.length; i += 4) {
-            int floatInt =
-                    ((bytes[i] & 0xFF) << 24) |
-                            ((bytes[i + 1] & 0xFF) << 16) |
-                            ((bytes[i + 2] & 0xFF) << 8) |
-                            (bytes[i + 3] & 0xFF);
-            embeds.add(Float.intBitsToFloat(floatInt));
-        }
-        return new FloatEmbeddings(embeds);
-    }
-
-    public static FloatEmbeddings fromBase64(String base64) {
-        return fromBytes(Base64.getDecoder().decode(base64));
     }
 }

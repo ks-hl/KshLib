@@ -7,23 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Embeddings {
-
-    public static AbstractEmbeddings fromIntList(List<Integer> intList) {
-        List<Float> embeddings = new ArrayList<>();
-        for (Integer i : intList) {
-            embeddings.add((float) i / Integer.MAX_VALUE);
-        }
-        return new FloatEmbeddings(embeddings);
-    }
-
-    public static AbstractEmbeddings fromNestedList(List<List<Float>> embeddings) {
-        List<Float> combined = new ArrayList<>();
-        for (List<Float> embedding : embeddings) {
-            combined.addAll(embedding);
-        }
-        return new FloatEmbeddings(combined);
-    }
-
     public static AbstractEmbeddings fromJSON(JSONArray array) {
         return new FloatEmbeddings(fromJSONToList(array));
     }

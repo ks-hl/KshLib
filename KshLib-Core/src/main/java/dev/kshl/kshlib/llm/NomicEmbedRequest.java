@@ -1,18 +1,8 @@
 package dev.kshl.kshlib.llm;
 
-import org.json.JSONObject;
-
 public class NomicEmbedRequest extends EmbedRequest {
-    private final Function function;
-
     public NomicEmbedRequest(String input, Function function) {
-        super("nomic-embed-text", input);
-        this.function = function;
-    }
-
-    @Override
-    protected void putContent(JSONObject json) {
-        json.put("input", function.toString().toLowerCase() + ": " + getContent());
+        super("nomic-embed-text", function.toString().toLowerCase() + ": " + input);
     }
 
     /**

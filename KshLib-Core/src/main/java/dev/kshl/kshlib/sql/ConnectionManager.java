@@ -280,17 +280,19 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     public <T> void executeBatch(Connection connection, String statement, Collection<T> collection, ThrowingFunction<T, List<?>, SQLException> valueFunction) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(statement)) {
-            for (T element : collection) {
-                List<?> values = valueFunction.apply(element);
-                for (int i = 0; i < values.size(); i++) {
-                    Object value = values.get(i);
-                    prepare(ps, i + 1, value);
+        executeTransaction(connection, () -> {
+            try (PreparedStatement ps = connection.prepareStatement(statement)) {
+                for (T element : collection) {
+                    List<?> values = valueFunction.apply(element);
+                    for (int i = 0; i < values.size(); i++) {
+                        Object value = values.get(i);
+                        prepare(ps, i + 1, value);
+                    }
+                    ps.addBatch();
                 }
-                ps.addBatch();
+                ps.executeBatch();
             }
-            ps.executeBatch();
-        }
+        });
     }
 
     //

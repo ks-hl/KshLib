@@ -9,8 +9,8 @@ import dev.kshl.kshlib.sql.EmbeddingsDAO;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,26 +18,37 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.stream.Stream;
 
 public class EmbeddingsManager {
-    private final String model;
     private final int contextLength;
     private final OllamaAPI ollamaAPI;
     private final EmbeddingsDAO embeddingsDAO;
     private final ILogger logger;
     private final int tokensPerBlock;
+    private final File rootDirectory;
     private static final float CHARS_PER_TOKEN = 3.5f;
 
-    public EmbeddingsManager(String model, int contextLength, OllamaAPI ollamaAPI, EmbeddingsDAO embeddingsDAO, ILogger logger, int tokensPerBlock) {
-        this.model = model;
+    public EmbeddingsManager(int contextLength, OllamaAPI ollamaAPI, EmbeddingsDAO embeddingsDAO, ILogger logger, int tokensPerBlock, File rootDirectory) {
         this.contextLength = contextLength;
         this.ollamaAPI = ollamaAPI;
         this.embeddingsDAO = embeddingsDAO;
         this.logger = logger;
         this.tokensPerBlock = tokensPerBlock;
+        this.rootDirectory = rootDirectory;
     }
 
-    public void setEmbedFiles(List<File> files) throws SQLException, BusyException, IOException {
+    public void setEmbedFiles() throws SQLException, BusyException, IOException {
+        List<File> files = new ArrayList<>();
+
+        try (Stream<Path> paths = Files.walk(rootDirectory.toPath())) {
+            paths.forEach(path -> {
+                File file = path.toFile();
+                if (file.isDirectory()) return;
+                files.add(file);
+            });
+        }
+
         Set<String> paths = new HashSet<>();
         for (File file : files) {
             paths.add(getPathRelativeToWorkingDirectory(file));
@@ -48,6 +59,7 @@ public class EmbeddingsManager {
                 embeddingsDAO.dropFile(file);
             }
         }
+
         ConcurrentLinkedQueue<File> queue = new ConcurrentLinkedQueue<>(files);
         List<Thread> threads = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
@@ -117,7 +129,7 @@ public class EmbeddingsManager {
                 if (endIndex < fileLength) {
                     block += " ...";
                 }
-                response = getEmbeddings("search_document: " + block);
+                response = getEmbeddingsDocument(path, "search_document: " + block);
 
                 if (response.prompt_eval_count() < contextLength) break; // Ensures nothing was truncated
 
@@ -144,21 +156,25 @@ public class EmbeddingsManager {
         }
     }
 
-    public EmbedResponse getEmbeddings(String text) throws IOException {
-        return ollamaAPI.embeddings(new EmbedRequest(model, text));
+    public EmbedResponse getEmbeddingsDocument(String fileName, String text) throws IOException {
+        return ollamaAPI.embeddings(GemmaEmbedRequest.document(fileName, text));
     }
 
-    public float[] getEmbeddingsFloat(String text) throws IOException {
-        var response = getEmbeddings("search_query: " + text);
+    public EmbedResponse getEmbeddingsQuery(String text) throws IOException {
+        return ollamaAPI.embeddings(GemmaEmbedRequest.query(text));
+    }
+
+    public float[] getEmbeddingsFloatQuery(String text) throws IOException {
+        var response = getEmbeddingsQuery("search_query: " + text);
         if (!(response.embeddings() instanceof FloatEmbeddings floatEmbeddings)) {
             throw new IllegalArgumentException("Unexpected embeddings: " + response.embeddings().getClass().getName());
         }
         return floatEmbeddings.getEmbeddings();
     }
 
-    private static String getPathRelativeToWorkingDirectory(File file) throws IOException {
-        Path workingDir = Paths.get(System.getProperty("user.dir")).toRealPath();
+    private String getPathRelativeToWorkingDirectory(File file) throws IOException {
+        Path rootPath = rootDirectory.toPath().toRealPath();
         Path filePath = file.toPath().toRealPath();
-        return workingDir.relativize(filePath).toString();
+        return rootPath.relativize(filePath).toString();
     }
 }
