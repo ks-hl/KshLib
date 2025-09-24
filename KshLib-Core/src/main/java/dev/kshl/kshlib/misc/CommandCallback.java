@@ -71,27 +71,29 @@ public class CommandCallback<T> {
      * @param sender     The sender of the command, must be equal to the callback's player
      * @param uuidString The UUID obtained from registerCallback
      */
-    public void handleCallback(T sender, String uuidString) {
+    public void handleCallback(T sender, String uuidString) throws CallbackException {
         final UUID uuid;
         try {
             uuid = UUID.fromString(uuidString);
         } catch (IllegalArgumentException e) {
-            return;
+            throw new CallbackException("Invalid UUID string: " + uuidString);
         }
 
         Callback callback = callbacks.get(uuid);
-        if (callback == null) return;
-        if (!Objects.equals(sender, callback.getSender())) return;
-
-        // If it has expired and the scheduled task has already flipped the flag (or removed it),
-        // do nothing. (If the removal hasn't happened yet but expired is set, still ignore.)
-        if (callback.isExpired()) return;
+        if (callback == null || callback.isExpired()) {
+            throw new CallbackNotFoundException();
+        }
+        if (!Objects.equals(sender, callback.getSender())) {
+            throw new WrongSenderCallbackException();
+        }
 
         if (callback.isOneTime()) {
             // Ensure the "execute" happens only once for one-time callbacks.
             boolean firstRun = callback.markExecuted();
             callbacks.remove(uuid);
-            if (!firstRun) return;
+            if (!firstRun) {
+                throw new CallbackOneTimeAlreadyUsedException();
+            }
         }
         safeRun(callback.getUuid(), callback.getOnExecute());
     }
@@ -127,6 +129,27 @@ public class CommandCallback<T> {
 
         boolean isExpired() {
             return expired.get() || (expirationTime > 0 && System.currentTimeMillis() >= expirationTime);
+        }
+    }
+
+    public static class CallbackException extends Exception {
+        public CallbackException(String message) {
+            super(message);
+        }
+    }
+
+    public static class CallbackNotFoundException extends CallbackException {
+        CallbackNotFoundException() {
+            super("Callback not found");
+        }
+    }
+
+    public static class WrongSenderCallbackException extends CallbackNotFoundException {
+    }
+
+    public static class CallbackOneTimeAlreadyUsedException extends CallbackException {
+        CallbackOneTimeAlreadyUsedException() {
+            super("That callback is one-time use and was already executed.");
         }
     }
 }
