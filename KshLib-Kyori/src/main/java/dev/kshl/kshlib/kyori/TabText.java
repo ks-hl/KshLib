@@ -36,6 +36,7 @@ public class TabText {
         for (String s : new String[]{"@", "~"}) {
             put(s, 7);
         }
+        put(Characters.TEN_FULL_STOP, 8);
         put(Characters.BAR_9, 9);
     }});
 
@@ -128,6 +129,10 @@ public class TabText {
             }
         }
         return pad.build().compact();
+    }
+
+    public static Component center(int size, Component component) {
+        return header(size, List.of(Component.empty(), component, Component.empty()));
     }
 
     private final List<List<Component>> lines;
