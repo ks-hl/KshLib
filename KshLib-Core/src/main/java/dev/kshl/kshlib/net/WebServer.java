@@ -40,6 +40,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 public abstract class WebServer implements Runnable, HttpHandler {
+    // CORS configuration
+    private static final Set<String> ALLOWED_REQUEST_HEADERS = Set.of(
+            "authorization", "content-type", "x-requested-with"
+    );
+    private static final long PREFLIGHT_MAX_AGE_SECONDS = 600; // 10 minutes
+
+    private boolean isOriginAllowed(@Nullable String origin) {
+        return origin != null && origins.contains(origin);
+    }
+
     private final int maxRequestLength;
     private final RateLimiter rateLimiter;
     private final Set<String> origins;
@@ -144,6 +154,45 @@ public abstract class WebServer implements Runnable, HttpHandler {
             String msg = null;
 
             try {
+                String originHeader = t.getRequestHeaders().getFirst("Origin");
+                String method = t.getRequestMethod();
+
+                // Short-circuit CORS preflight
+                if ("OPTIONS".equalsIgnoreCase(method)) {
+                    String requestMethod = t.getRequestHeaders().getFirst("Access-Control-Request-Method");
+                    String requestHeaders = t.getRequestHeaders().getFirst("Access-Control-Request-Headers");
+
+                    Headers rh = t.getResponseHeaders();
+
+                    if (isOriginAllowed(originHeader) && requestMethod != null) {
+                        rh.add("Access-Control-Allow-Origin", originHeader);
+                        rh.add("Access-Control-Allow-Credentials", "true");  // only if you truly need cookies/credentials
+                        rh.add("Access-Control-Allow-Methods", allowedMethodsForEndpoint(
+                                Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/")
+                        ));
+
+                        String allowedReqHeaders = filterRequestedHeaders(requestHeaders);
+                        if (!allowedReqHeaders.isEmpty()) {
+                            rh.add("Access-Control-Allow-Headers", allowedReqHeaders);
+                            // Proxies must vary on this or they may cache a mismatched preflight
+                            rh.add("Vary", "Origin");
+                            rh.add("Vary", "Access-Control-Request-Headers");
+                            rh.add("Vary", "Access-Control-Request-Method");
+                        } else {
+                            rh.add("Vary", "Origin");
+                        }
+
+                        rh.add("Access-Control-Max-Age", Long.toString(PREFLIGHT_MAX_AGE_SECONDS));
+                        // no body for preflight
+                        t.sendResponseHeaders(204, -1);
+                    } else {
+                        // Origin not allowed or missing required headers → deny
+                        t.sendResponseHeaders(403, -1);
+                    }
+                    return;
+                }
+
+
                 sender = parseXForwardedFor(t.getRemoteAddress().getAddress().toString(), t.getRequestHeaders());
                 if (sender.startsWith("/")) sender = sender.substring(1);
                 endpoint = Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/");
@@ -219,13 +268,8 @@ public abstract class WebServer implements Runnable, HttpHandler {
             }
             if (!origins.isEmpty() && request != null) {
                 var originList = request.headers().get("Origin");
-                if (originList != null && !originList.isEmpty()) {
-                    String origin = originList.get(0);
-                    if (origins.contains(origin)) {
-                        t.getResponseHeaders().add("Access-Control-Allow-Origin", origin);
-                        t.getResponseHeaders().add("Access-Control-Allow-Credentials", "true");
-                    }
-                }
+                String origin = (originList != null && !originList.isEmpty()) ? originList.get(0) : null;
+                applyCorsForActualResponse(t.getResponseHeaders(), origin, true);
             }
 
             if (response.eventStream != null) {
@@ -241,7 +285,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
                         EventStream.Event event = response.eventStream.poll();
                         String body = event.format();
                         if (body != null) {
-                            os.write(body.getBytes());
+                            os.write(body.getBytes(StandardCharsets.UTF_8));
                             os.flush();
                         }
                         if (event.close()) {
@@ -267,7 +311,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
                 }
             } else {
 
-                byte[] out = response.body == null ? new byte[0] : response.body.getBytes();
+                byte[] out = response.body == null ? new byte[0] : response.body.getBytes(StandardCharsets.UTF_8);
                 t.sendResponseHeaders(response.code, out.length);
                 try (OutputStream os = t.getResponseBody()) {
                     if (out.length > 0) os.write(out);
@@ -371,6 +415,58 @@ public abstract class WebServer implements Runnable, HttpHandler {
     protected Response handle(Request request) throws WebException {
         return null;
     }
+
+    private void applyCorsForActualResponse(Headers responseHeaders, @Nullable String origin, boolean allowCredentials) {
+        if (!isOriginAllowed(origin)) return;
+
+        responseHeaders.add("Access-Control-Allow-Origin", origin);
+        if (allowCredentials) {
+            responseHeaders.add("Access-Control-Allow-Credentials", "true");
+        }
+        responseHeaders.add("Vary", "Origin");
+    }
+
+    // Echo back only headers we allow (case-insensitive)
+    private String filterRequestedHeaders(String acrh) {
+        if (acrh == null || acrh.isBlank()) return "";
+        String[] req = acrh.split("\\s*,\\s*");
+        List<String> allowed = new ArrayList<>();
+        for (String h : req) {
+            if (ALLOWED_REQUEST_HEADERS.contains(h.toLowerCase())) {
+                allowed.add(h);
+            }
+        }
+        return String.join(", ", allowed);
+    }
+
+    // Which methods are allowed for this endpoint? (fallback to common verbs)
+    private String allowedMethodsForEndpoint(String endpoint) {
+        // Try to infer from annotated endpoints
+        Set<String> methods = new HashSet<>();
+        for (Object eh : endpoints) {
+            for (Map.Entry<Method, Endpoint> e : getEndpointAnnotatedMethods(eh).entrySet()) {
+                Endpoint ep = e.getValue();
+                String pattern = ep.value();
+                boolean matches;
+                if (ep.regex()) {
+                    matches = endpoint.matches(pattern);
+                } else {
+                    matches = false;
+                    for (String part : pattern.split(",")) {
+                        if (normalizeEndpointString(part.trim()).equalsIgnoreCase(endpoint)) {
+                            matches = true;
+                            break;
+                        }
+                    }
+                }
+                if (matches) methods.add(ep.method().name());
+            }
+        }
+        if (methods.isEmpty()) methods.addAll(List.of("GET", "POST", "PUT", "DELETE")); // sensible default
+        methods.add("OPTIONS");
+        return String.join(", ", methods);
+    }
+
 
     public record Request(long requestTime, String sender, String endpoint, HTTPRequestType type,
                           @Nonnull Headers headers, @Nonnull Map<String, String> query,
@@ -484,8 +580,8 @@ public abstract class WebServer implements Runnable, HttpHandler {
     /**
      * Called twice for each request, one for global, one for endpoint-specific.
      *
-     * @param sender          IP address of the sender.
-     * @param endpoint        The endpoint requested.
+     * @param sender   IP address of the sender.
+     * @param endpoint The endpoint requested.
      * @throws WebException In order to disallow the connection for any reason.
      */
     protected void onRequest(String sender, String endpoint) throws WebException {
