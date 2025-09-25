@@ -19,9 +19,9 @@ public class WebServerTest {
     public void testWebServer() throws IOException, ExecutionException, InterruptedException {
         WebServer webServer = new TestWebServer() {
             @Override
-            protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint) throws WebException {
+            protected void onRequest(String sender, String endpoint) throws WebException {
                 if (endpoint.equals("/ban")) throw new WebException(HTTPResponseCode.FORBIDDEN);
-                info(String.format("    Rate Limiter [%s] %s", sender, isGlobalLimiter ? "GLOBAL" : endpoint));
+                info(String.format("    Rate Limiter [%s] %s", sender, endpoint));
             }
 
             @Override

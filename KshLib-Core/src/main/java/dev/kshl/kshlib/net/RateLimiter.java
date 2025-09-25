@@ -1,17 +1,24 @@
 package dev.kshl.kshlib.net;
 
+import lombok.Getter;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class RateLimiter {
     public static final String GLOBAL_SENDER = "__global__";
     private final Bucket globalBucket;
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+    @Getter
     private final int maxRequests;
+    @Getter
     private final long window;
 
-    private long lastPurge = System.currentTimeMillis();
+    private final PurgeTimer purgeTimer = new PurgeTimer();
 
     public RateLimiter(int maxRequests, long window) {
         this.maxRequests = maxRequests;
@@ -26,11 +33,22 @@ public class RateLimiter {
      */
     public boolean check(String sender) {
         Objects.requireNonNull(sender, "sender must be not null");
-        if (System.currentTimeMillis() - lastPurge > 1000) {
-            lastPurge = System.currentTimeMillis();
+        if (purgeTimer.shouldPurge()) {
             buckets.values().removeIf(Bucket::isStale);
         }
         return getBucket(sender).check();
+    }
+
+    private static class PurgeTimer {
+        private long lastPurge = System.currentTimeMillis();
+
+        synchronized boolean shouldPurge() {
+            long time = System.currentTimeMillis();
+            if (time - lastPurge < 1000) return false;
+
+            lastPurge = time;
+            return true;
+        }
     }
 
     /**
@@ -42,58 +60,46 @@ public class RateLimiter {
         return check(GLOBAL_SENDER);
     }
 
-    public int getMaxRequests() {
-        return maxRequests;
-    }
-
-    public long getWindow() {
-        return window;
-    }
-
     class Bucket {
         private long milliTokens;
         private long lastRefill;
         private long lastUse = System.currentTimeMillis();
 
-        public Bucket() {
-            Bucket.this.reset();
+        Bucket() {
+            reset();
         }
 
-        void reset() {
+        synchronized void reset() {
             this.milliTokens = getMaxRequests() * 1000L;
             this.lastRefill = System.currentTimeMillis();
+            this.lastUse = this.lastRefill;
         }
 
-        private void refill() {
+        private synchronized void refill() {
             long time = System.currentTimeMillis();
             long timeSinceRefill = time - lastRefill;
             lastRefill = time;
             if (timeSinceRefill > 0) {
                 double add = getMaxRequests() / (double) getWindow() * timeSinceRefill;
                 this.milliTokens += Math.round(add * 1000);
-
                 long milliTokenMax = getMaxRequests() * 1000L;
-                if (this.milliTokens > milliTokenMax) {
-                    this.milliTokens = milliTokenMax;
-                }
+                if (this.milliTokens > milliTokenMax) this.milliTokens = milliTokenMax;
             }
         }
 
-        boolean check() {
-            synchronized (this) {
-                this.lastUse = System.currentTimeMillis();
-                refill();
-                if (this.milliTokens < 1000) return false;
-                this.milliTokens -= 1000;
-                return true;
-            }
+        synchronized boolean check() {
+            this.lastUse = System.currentTimeMillis();
+            refill();
+            if (this.milliTokens < 1000) return false;
+            this.milliTokens -= 1000;
+            return true;
         }
 
-        boolean isStale() {
+        synchronized boolean isStale() {
             return System.currentTimeMillis() - lastUse > getWindow();
         }
 
-        public long getTokens() {
+        synchronized long getTokens() {
             return this.milliTokens / 1000;
         }
     }

@@ -7,12 +7,14 @@ import com.sun.net.httpserver.HttpServer;
 import dev.kshl.kshlib.misc.StackUtil;
 import dev.kshl.kshlib.misc.Timer;
 import dev.kshl.kshlib.sql.SQLAPIKeyManager;
+import lombok.Getter;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
@@ -23,6 +25,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -38,8 +41,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public abstract class WebServer implements Runnable, HttpHandler {
     private final int maxRequestLength;
-    private final RateLimiter globalRateLimiter;
-    private final Map<String, RateLimiter> endpointSpecificRateLimiter = new HashMap<>();
+    private final RateLimiter rateLimiter;
     private final Set<String> origins;
     private final int numberOfProxiesToResolve;
     private int port;
@@ -66,11 +68,11 @@ public abstract class WebServer implements Runnable, HttpHandler {
         return params;
     }
 
-    public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, RateLimiter globalRateLimiter, boolean requireJSONInput, String... origins) {
+    public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, RateLimiter rateLimiter, boolean requireJSONInput, String... origins) {
         this.port = port;
         this.numberOfProxiesToResolve = numberOfProxiesToResolve;
         this.maxRequestLength = maxRequestLength;
-        this.globalRateLimiter = globalRateLimiter;
+        this.rateLimiter = rateLimiter;
         this.requireJSONInput = requireJSONInput;
 
         this.origins = new HashSet<>(List.of(origins));
@@ -98,7 +100,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
         info("Web server running on port " + port);
         server.createContext("/", this);
 
-        server.setExecutor(Executors.newCachedThreadPool());
+        server.setExecutor(Executors.newFixedThreadPool(8));
         server.start();
     }
 
@@ -149,21 +151,18 @@ public abstract class WebServer implements Runnable, HttpHandler {
                 msg = sender + " " + t.getRequestMethod() + " " + endpoint + (queryString != null ? "?" + queryString : "") + " - %d";
 
                 {
-                    boolean global, specific;
-                    synchronized (globalRateLimiter) {
-                        global = globalRateLimiter.check(sender);
+                    boolean global;
+                    synchronized (rateLimiter) {
+                        global = rateLimiter.check(sender);
                     }
-                    onRequest(sender, true, endpoint);
-                    synchronized (endpointSpecificRateLimiter) {
-                        specific = endpointSpecificRateLimiter.computeIfAbsent(endpoint.toLowerCase(), endpoint_ -> globalRateLimiter.copy()).check(sender);
-                    }
-                    onRequest(sender, false, endpoint);
-                    if (!global || !specific) {
+                    onRequest(sender, endpoint);
+                    if (!global) {
                         throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
                     }
                 }
 
-                requestString = new String(t.getRequestBody().readAllBytes());
+                byte[] raw = readUpTo(t.getRequestBody(), maxRequestLength);
+                requestString = new String(raw, StandardCharsets.UTF_8);
                 if (requestString.isEmpty()) requestString = "{}";
 
                 var query = parseQuery(t.getRequestURI().getQuery());
@@ -190,11 +189,22 @@ public abstract class WebServer implements Runnable, HttpHandler {
                     }
                 }
             } catch (WebException e) {
-                response = new Response().code(e.responseCode).body(new JSONObject().put("error", e.userErrorMessage));
+                response = e.toResponse();
                 msg += " - " + e.getMessage();
             } catch (Throwable e) {
-                response = new Response().code(HTTPResponseCode.INTERNAL_SERVER_ERROR).body(new JSONObject().put("error", "An unknown error occurred"));
-                msg += " - " + e.getMessage() + ": " + StackUtil.format(e, 0);
+                response = null;
+                if (e instanceof Exception exception) {
+                    try {
+                        response = mapExceptionToResponse(exception);
+                    } catch (WebException webException) {
+                        response = webException.toResponse();
+                    }
+                }
+                msg += " - " + e.getMessage();
+                if (response == null) {
+                    response = new Response().code(HTTPResponseCode.INTERNAL_SERVER_ERROR).body(new JSONObject().put("error", "An unknown error occurred"));
+                    msg += ": " + StackUtil.format(e, 0);
+                }
             }
             msg = String.format(msg, response.code) + ", took " + timer;
             logRequest(request, response, msg);
@@ -269,7 +279,14 @@ public abstract class WebServer implements Runnable, HttpHandler {
         }
     }
 
-    private Response handleEndpoints(Request request) throws Throwable {
+    public @Nullable Response mapExceptionToResponse(Exception exception) throws WebException {
+        return null;
+    }
+
+    /**
+     * This method should only be called externally for testing.
+     */
+    public Response handleEndpoints(Request request) throws Throwable {
         for (Object endpointHandler : endpoints) {
             for (Map.Entry<Method, Endpoint> method : getEndpointAnnotatedMethods(endpointHandler).entrySet()) {
                 boolean match = false;
@@ -339,6 +356,12 @@ public abstract class WebServer implements Runnable, HttpHandler {
         return endpoint;
     }
 
+    private static byte[] readUpTo(InputStream in, int maxBytes) throws WebException, IOException {
+        byte[] buf = in.readNBytes(maxBytes + 1);
+        if (buf.length > maxBytes) throw new WebException(HTTPResponseCode.PAYLOAD_TOO_LARGE);
+        return buf;
+    }
+
     public abstract void print(String msg, Throwable t);
 
     public abstract void info(String msg);
@@ -371,9 +394,9 @@ public abstract class WebServer implements Runnable, HttpHandler {
         }
     }
 
+    @Getter
     public static class WebException extends IOException {
-        public final HTTPResponseCode responseCode;
-
+        private final HTTPResponseCode responseCode;
         private final String userErrorMessage;
 
         public WebException(HTTPResponseCode responseCode) {
@@ -390,8 +413,8 @@ public abstract class WebServer implements Runnable, HttpHandler {
             this.userErrorMessage = userErrorMessage == null ? responseCode.toStringCapitalized() : userErrorMessage;
         }
 
-        public String getUserErrorMessage() {
-            return userErrorMessage;
+        public Response toResponse() {
+            return new Response().code(getResponseCode()).body(new JSONObject().put("error", getUserErrorMessage()));
         }
     }
 
@@ -462,11 +485,10 @@ public abstract class WebServer implements Runnable, HttpHandler {
      * Called twice for each request, one for global, one for endpoint-specific.
      *
      * @param sender          IP address of the sender.
-     * @param isGlobalLimiter Whether this call is for the global limiter or the endpoint-specific limiter.
      * @param endpoint        The endpoint requested.
      * @throws WebException In order to disallow the connection for any reason.
      */
-    protected void onRequest(String sender, boolean isGlobalLimiter, String endpoint) throws WebException {
+    protected void onRequest(String sender, String endpoint) throws WebException {
     }
 
     protected void logRequest(Request request, Response response, String msg) {
