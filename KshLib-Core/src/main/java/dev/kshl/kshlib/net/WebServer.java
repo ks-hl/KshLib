@@ -171,15 +171,12 @@ public abstract class WebServer implements Runnable, HttpHandler {
                                 Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/")
                         ));
 
+                        rh.add("Vary", "Origin");
+                        rh.add("Vary", "Access-Control-Request-Headers");
+                        rh.add("Vary", "Access-Control-Request-Method");
                         String allowedReqHeaders = filterRequestedHeaders(requestHeaders);
                         if (!allowedReqHeaders.isEmpty()) {
                             rh.add("Access-Control-Allow-Headers", allowedReqHeaders);
-                            // Proxies must vary on this or they may cache a mismatched preflight
-                            rh.add("Vary", "Origin");
-                            rh.add("Vary", "Access-Control-Request-Headers");
-                            rh.add("Vary", "Access-Control-Request-Method");
-                        } else {
-                            rh.add("Vary", "Origin");
                         }
 
                         rh.add("Access-Control-Max-Age", Long.toString(PREFLIGHT_MAX_AGE_SECONDS));
@@ -216,25 +213,21 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
                 var query = parseQuery(t.getRequestURI().getQuery());
 
-                if (requestString.length() > maxRequestLength) {
-                    throw new WebException(HTTPResponseCode.PAYLOAD_TOO_LARGE);
-                } else {
-                    JSONObject jsonIn = null;
-                    try {
-                        jsonIn = new JSONObject(requestString);
-                    } catch (JSONException e) {
-                        if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
-                    }
-                    request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
+                JSONObject jsonIn = null;
+                try {
+                    jsonIn = new JSONObject(requestString);
+                } catch (JSONException e) {
+                    if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
+                }
+                request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
 
-                    response = handleEndpoints(request);
-                    if (response == null) response = handle(request);
-                    if (response == null) {
-                        if (endpoint.equalsIgnoreCase("/favicon.ico")) {
-                            response = new Response().code(HTTPResponseCode.NOT_FOUND); // 404 gracefully because favicon.ico is expected to be requested frequently during testing
-                        } else {
-                            throw new WebException(HTTPResponseCode.NOT_FOUND);
-                        }
+                response = handleEndpoints(request);
+                if (response == null) response = handle(request);
+                if (response == null) {
+                    if (endpoint.equalsIgnoreCase("/favicon.ico")) {
+                        response = new Response().code(HTTPResponseCode.NOT_FOUND); // 404 gracefully because favicon.ico is expected to be requested frequently during testing
+                    } else {
+                        throw new WebException(HTTPResponseCode.NOT_FOUND);
                     }
                 }
             } catch (WebException e) {
@@ -259,7 +252,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
             logRequest(request, response, msg);
 
             if (response.eventStream == null && response.isJSON)
-                t.getResponseHeaders().add("Content-Type", "application/json");
+                t.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
 
             if (response.headers != null) {
                 for (Map.Entry<String, String> entry : response.headers.entrySet()) {
