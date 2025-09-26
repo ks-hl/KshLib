@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer;
 import dev.kshl.kshlib.misc.StackUtil;
 import dev.kshl.kshlib.misc.Timer;
 import dev.kshl.kshlib.sql.SQLAPIKeyManager;
+import lombok.AccessLevel;
 import lombok.Getter;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -27,10 +28,10 @@ import java.lang.reflect.Modifier;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,12 +39,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 public abstract class WebServer implements Runnable, HttpHandler {
-    // CORS configuration
-    private static final Set<String> ALLOWED_REQUEST_HEADERS = Set.of(
-            "authorization", "content-type", "x-requested-with"
-    );
     private static final long PREFLIGHT_MAX_AGE_SECONDS = 600; // 10 minutes
 
     private boolean isOriginAllowed(@Nullable String origin) {
@@ -51,9 +49,11 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     private final int maxRequestLength;
+    @Getter(value = AccessLevel.PACKAGE)
     private final RateLimiter rateLimiter;
     private final Set<String> origins;
     private final int numberOfProxiesToResolve;
+    @Getter
     private int port;
     private final boolean requireJSONInput;
     private boolean closed;
@@ -66,16 +66,14 @@ public abstract class WebServer implements Runnable, HttpHandler {
         this(port, numberOfProxiesToResolve, maxRequestLength, new RateLimiter(600, 600_000L), requireJSONInput, origins);
     }
 
-    private static Map<String, String> parseQuery(String query) throws WebException {
-        if (query == null || query.isEmpty()) return Map.of();
-        Map<String, String> params = new HashMap<>();
+    private static void parseQuery(Map<String, String> map, String query) throws WebException {
+        if (query == null || query.isEmpty()) return;
         for (String part : query.split("&")) {
             String[] kv = part.split("=");
             if (kv.length > 2)
                 throw new WebException(HTTPResponseCode.BAD_REQUEST, "Improperly formatted query string");
-            params.put(kv[0], kv.length == 2 ? kv[1] : null);
+            map.put(kv[0], kv.length == 2 ? kv[1] : null);
         }
-        return params;
     }
 
     public WebServer(int port, int numberOfProxiesToResolve, int maxRequestLength, RateLimiter rateLimiter, boolean requireJSONInput, String... origins) {
@@ -99,7 +97,6 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     public void start(InetSocketAddress inetSocketAddress) {
-        info("Starting web server on port " + port + "...");
         try {
             server = HttpServer.create(inetSocketAddress, 0);
 
@@ -148,83 +145,52 @@ public abstract class WebServer implements Runnable, HttpHandler {
         String sender = null;
         String endpoint = null;
         try {
-            String requestString;
+            String requestBody = null;
             Response response;
             Request request = null;
             String msg = null;
+            Map<String, String> query = new HashMap<>();
+            JSONObject requestBodyJSON = null;
 
             try {
-                String originHeader = t.getRequestHeaders().getFirst("Origin");
-                String method = t.getRequestMethod();
-
-                // Short-circuit CORS preflight
-                if ("OPTIONS".equalsIgnoreCase(method)) {
-                    String requestMethod = t.getRequestHeaders().getFirst("Access-Control-Request-Method");
-                    String requestHeaders = t.getRequestHeaders().getFirst("Access-Control-Request-Headers");
-
-                    Headers rh = t.getResponseHeaders();
-
-                    if (isOriginAllowed(originHeader) && requestMethod != null) {
-                        rh.add("Access-Control-Allow-Origin", originHeader);
-                        rh.add("Access-Control-Allow-Credentials", "true");  // only if you truly need cookies/credentials
-                        rh.add("Access-Control-Allow-Methods", allowedMethodsForEndpoint(
-                                Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/")
-                        ));
-
-                        rh.add("Vary", "Origin");
-                        rh.add("Vary", "Access-Control-Request-Headers");
-                        rh.add("Vary", "Access-Control-Request-Method");
-                        String allowedReqHeaders = filterRequestedHeaders(requestHeaders);
-                        if (!allowedReqHeaders.isEmpty()) {
-                            rh.add("Access-Control-Allow-Headers", allowedReqHeaders);
-                        }
-
-                        rh.add("Access-Control-Max-Age", Long.toString(PREFLIGHT_MAX_AGE_SECONDS));
-                        // no body for preflight
-                        t.sendResponseHeaders(204, -1);
-                    } else {
-                        // Origin not allowed or missing required headers → deny
-                        t.sendResponseHeaders(403, -1);
-                    }
-                    return;
-                }
-
-
                 sender = parseXForwardedFor(t.getRemoteAddress().getAddress().toString(), t.getRequestHeaders());
                 if (sender.startsWith("/")) sender = sender.substring(1);
                 endpoint = Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/");
                 final String queryString = t.getRequestURI().getQuery();
                 msg = sender + " " + t.getRequestMethod() + " " + endpoint + (queryString != null ? "?" + queryString : "") + " - %d";
 
-                {
-                    boolean global;
-                    synchronized (rateLimiter) {
-                        global = rateLimiter.check(sender);
+                // Short-circuit CORS preflight
+
+                HTTPRequestType requestType = HTTPRequestType.valueOf(t.getRequestMethod());
+                if (requestType != HTTPRequestType.OPTIONS) {
+                    {
+                        boolean global;
+                        synchronized (rateLimiter) {
+                            global = rateLimiter.check(sender);
+                        }
+                        onRequest(sender, endpoint);
+                        if (!global) {
+                            throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
+                        }
                     }
-                    onRequest(sender, endpoint);
-                    if (!global) {
-                        throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
+
+                    byte[] raw = readUpTo(t.getRequestBody(), maxRequestLength);
+                    requestBody = new String(raw, StandardCharsets.UTF_8);
+                    if (requestBody.isEmpty()) requestBody = "{}";
+
+                    parseQuery(query, t.getRequestURI().getQuery());
+
+                    try {
+                        requestBodyJSON = new JSONObject(requestBody);
+                    } catch (JSONException e) {
+                        if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
                     }
-                }
-
-                byte[] raw = readUpTo(t.getRequestBody(), maxRequestLength);
-                requestString = new String(raw, StandardCharsets.UTF_8);
-                if (requestString.isEmpty()) requestString = "{}";
-
-                var query = parseQuery(t.getRequestURI().getQuery());
-
-                JSONObject jsonIn = null;
-                try {
-                    jsonIn = new JSONObject(requestString);
-                } catch (JSONException e) {
-                    if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
                 }
                 String host = t.getRequestHeaders().getFirst("Host");
 
-                request = new Request(host, requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
+                request = new Request(host, requestTime, sender, endpoint, requestType, t.getRequestHeaders(), query, requestBody, requestBodyJSON);
 
                 response = handleEndpoints(request);
-                if (response == null) response = handle(request);
                 if (response == null) {
                     if (endpoint.equalsIgnoreCase("/favicon.ico")) {
                         response = new Response().code(HTTPResponseCode.NOT_FOUND); // 404 gracefully because favicon.ico is expected to be requested frequently during testing
@@ -264,7 +230,8 @@ public abstract class WebServer implements Runnable, HttpHandler {
             if (!origins.isEmpty() && request != null) {
                 var originList = request.headers().get("Origin");
                 String origin = (originList != null && !originList.isEmpty()) ? originList.get(0) : null;
-                applyCorsForActualResponse(t.getResponseHeaders(), origin, true);
+                boolean allowCredentials = response.endpointContainer != null && response.endpointContainer.annotation().allowCredentials();
+                applyCorsForActualResponse(t.getResponseHeaders(), origin, allowCredentials);
             }
 
             if (response.eventStream != null) {
@@ -322,32 +289,20 @@ public abstract class WebServer implements Runnable, HttpHandler {
         return null;
     }
 
-    /**
-     * This method should only be called externally for testing.
-     */
-    public Response handleEndpoints(Request request) throws Throwable {
+    private EndpointContainer getEndpoint(Request request, HTTPRequestType requestType) {
         for (Object endpointHandler : endpoints) {
-            for (Map.Entry<Method, Endpoint> method : getEndpointAnnotatedMethods(endpointHandler).entrySet()) {
-                boolean match = false;
-                String endpointValue = method.getValue().value();
-                if (method.getValue().regex()) {
-                    match = request.endpoint().matches(endpointValue);
-                } else {
-                    for (String endpointValuePart : endpointValue.split(",")) {
-                        endpointValuePart = normalizeEndpointString(endpointValuePart.trim());
-                        if (request.endpoint().equalsIgnoreCase(endpointValuePart)) {
-                            match = true;
-                            break;
+            for (EndpointContainer endpointContainer : getEndpointAnnotatedMethods(endpointHandler)) {
+                if (Arrays.stream(endpointContainer.annotation().method()).noneMatch(value -> value == requestType))
+                    continue;
+                for (String value : endpointContainer.annotation().value()) {
+                    if (endpointContainer.annotation().regex()) {
+                        if (request.endpoint().matches(value)) {
+                            return endpointContainer;
                         }
-                    }
-                }
-
-                if (match) {
-                    try {
-                        return (Response) method.getKey().invoke(endpointHandler, request);
-                    } catch (InvocationTargetException e) {
-                        throw e.getTargetException();
-                    } catch (IllegalAccessException ignored) {
+                    } else {
+                        if (request.endpoint().equalsIgnoreCase(normalizeEndpointString(value))) {
+                            return endpointContainer;
+                        }
                     }
                 }
             }
@@ -356,8 +311,66 @@ public abstract class WebServer implements Runnable, HttpHandler {
         return null;
     }
 
-    private Map<Method, Endpoint> getEndpointAnnotatedMethods(Object endpointHandler) {
-        Map<Method, Endpoint> methods = new LinkedHashMap<>();
+    /**
+     * This method should only be called externally for testing.
+     */
+    public Response handleEndpoints(Request request) throws Throwable {
+        EndpointContainer endpoint;
+        if (request.type() == HTTPRequestType.OPTIONS) {
+            String requestMethod = request.headers().getFirst("Access-Control-Request-Method");
+            if (requestMethod == null) return null;
+            String requestHeaders = request.headers().getFirst("Access-Control-Request-Headers");
+
+            Response response = new Response();
+
+            endpoint = getEndpoint(request, HTTPRequestType.valueOf(requestMethod.toUpperCase()));
+
+            if (endpoint == null) return null;
+
+            String originHeader = request.headers().getFirst("Origin");
+            if (isOriginAllowed(originHeader)) {
+                response.header("Access-Control-Allow-Origin", originHeader);
+                response.header("Access-Control-Allow-Credentials", String.valueOf(endpoint.annotation().allowCredentials()));  // only if you truly need cookies/credentials
+                response.header("Access-Control-Allow-Methods", Arrays.stream(endpoint.annotation().method())
+                        .map(Object::toString)
+                        .collect(Collectors.joining(", ")));
+
+                response.header("Vary", "Origin");
+                response.header("Vary", "Access-Control-Request-Headers");
+                response.header("Vary", "Access-Control-Request-Method");
+                String allowedReqHeaders = filterRequestedHeaders(requestHeaders);
+                if (!allowedReqHeaders.isEmpty()) {
+                    response.header("Access-Control-Allow-Headers", allowedReqHeaders);
+                }
+
+                response.header("Access-Control-Max-Age", Long.toString(PREFLIGHT_MAX_AGE_SECONDS));
+                // no body for preflight
+                response.code(HTTPResponseCode.NO_CONTENT);
+            } else {
+                response.code(HTTPResponseCode.FORBIDDEN);
+            }
+            return response;
+        }
+        endpoint = getEndpoint(request, request.type());
+        if (endpoint == null) return null;
+
+        try {
+            Response response = (Response) endpoint.method().invoke(endpoint.handlerInstance(), request);
+            response.endpointContainer = endpoint;
+            return response;
+        } catch (InvocationTargetException e) {
+            throw e.getTargetException();
+        } catch (ClassCastException e) {
+            print("Improper return value for endpoint " + endpoint, e);
+            return null;
+        } catch (IllegalAccessException e) {
+            print("Improperly annotated method handler" + endpoint, e);
+            return null;
+        }
+    }
+
+    private List<EndpointContainer> getEndpointAnnotatedMethods(Object endpointHandler) {
+        List<EndpointContainer> methods = new ArrayList<>();
         for (Method method : endpointHandler.getClass().getDeclaredMethods()) {
             if (Modifier.isStatic(method.getModifiers())) continue;
             if (!method.canAccess(endpointHandler)) continue;
@@ -376,13 +389,13 @@ public abstract class WebServer implements Runnable, HttpHandler {
             if (!Objects.equals(method.getReturnType(), Response.class))
                 throw new IllegalArgumentException("Methods annotated with @Endpoint must return WebServer.Response");
 
-            methods.put(method, endpointAnnotation);
+            methods.add(new EndpointContainer(endpointHandler, method, endpointAnnotation));
         }
         return methods;
     }
 
     /**
-     * Normalizes the endpoint string so that it has a leading '/' and no trailing '/'.
+     * Normalizes the method string so that it has a leading '/' and no trailing '/'.
      */
     private String normalizeEndpointString(String endpoint) {
         endpoint = endpoint.trim();
@@ -407,10 +420,6 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
     public abstract void warning(String msg);
 
-    protected Response handle(Request request) throws WebException {
-        return null;
-    }
-
     private void applyCorsForActualResponse(Headers responseHeaders, @Nullable String origin, boolean allowCredentials) {
         if (!isOriginAllowed(origin)) return;
 
@@ -427,45 +436,20 @@ public abstract class WebServer implements Runnable, HttpHandler {
         String[] req = acrh.split("\\s*,\\s*");
         List<String> allowed = new ArrayList<>();
         for (String h : req) {
-            if (ALLOWED_REQUEST_HEADERS.contains(h.toLowerCase())) {
+            if (getAllowedRequestHeaders().contains(h.toLowerCase())) {
                 allowed.add(h);
             }
         }
         return String.join(", ", allowed);
     }
 
-    // Which methods are allowed for this endpoint? (fallback to common verbs)
-    private String allowedMethodsForEndpoint(String endpoint) {
-        // Try to infer from annotated endpoints
-        Set<String> methods = new HashSet<>();
-        for (Object eh : endpoints) {
-            for (Map.Entry<Method, Endpoint> e : getEndpointAnnotatedMethods(eh).entrySet()) {
-                Endpoint ep = e.getValue();
-                String pattern = ep.value();
-                boolean matches;
-                if (ep.regex()) {
-                    matches = endpoint.matches(pattern);
-                } else {
-                    matches = false;
-                    for (String part : pattern.split(",")) {
-                        if (normalizeEndpointString(part.trim()).equalsIgnoreCase(endpoint)) {
-                            matches = true;
-                            break;
-                        }
-                    }
-                }
-                if (matches) methods.add(ep.method().name());
-            }
-        }
-        if (methods.isEmpty()) methods.addAll(List.of("GET", "POST", "PUT", "DELETE")); // sensible default
-        methods.add("OPTIONS");
-        return String.join(", ", methods);
+    protected Set<String> getAllowedRequestHeaders() {
+        return Set.of("authorization", "content-type", "accept", "accept-language", "x-requested-with", "x-csrf-token");
     }
-
 
     public record Request(String host, long requestTime, String sender, String endpoint, HTTPRequestType type,
                           @Nonnull Headers headers, @Nonnull Map<String, String> query,
-                          @Nonnull String bodyString, @Nullable JSONObject bodyJSON) {
+                          @Nullable String bodyString, @Nullable JSONObject bodyJSON) {
         @Nonnull
         public JSONObject bodyJSONOrEmpty() {
             return bodyJSON() == null ? new JSONObject() : bodyJSON();
@@ -516,6 +500,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
         boolean isJSON;
         EventStream eventStream;
         private long frequency;
+        private EndpointContainer endpointContainer;
 
         public Response() {
         }
@@ -573,10 +558,10 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     /**
-     * Called twice for each request, one for global, one for endpoint-specific.
+     * Called twice for each request, one for global, one for method-specific.
      *
      * @param sender   IP address of the sender.
-     * @param endpoint The endpoint requested.
+     * @param endpoint The method requested.
      * @throws WebException In order to disallow the connection for any reason.
      */
     protected void onRequest(String sender, String endpoint) throws WebException {
@@ -587,28 +572,32 @@ public abstract class WebServer implements Runnable, HttpHandler {
         else info(msg);
     }
 
-    public final int getPort() {
-        return port;
-    }
-
     @Target(ElementType.METHOD)
     @Retention(RetentionPolicy.RUNTIME)
     public @interface Endpoint {
         /**
-         * The endpoint. May be multiple values separated by commas, or regex if the {@link #regex()} flag is set.
+         * The method. May be regex if the {@link #regex()} flag is set.
          * If the {@link #regex()} flag is set, commas are ignored and the entire string is considered one pattern.
          */
-        String value() default "/";
+        String[] value() default "/";
 
         /**
          * The required request type
          */
-        HTTPRequestType method() default HTTPRequestType.GET;
+        HTTPRequestType[] method() default HTTPRequestType.GET;
 
         /**
          * Whether to check the provided {@link #value()} with Regex. Commas within {@link #value()} are ignored if using regex.
          * Endpoints will always start with a leading '/' and have no trailing '/'. Default value handling ignores this, but regex is specific.
          */
         boolean regex() default false;
+
+        /**
+         * Whether to set
+         */
+        boolean allowCredentials() default false;
+    }
+
+    private record EndpointContainer(Object handlerInstance, Method method, Endpoint annotation) {
     }
 }

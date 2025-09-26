@@ -1,5 +1,8 @@
 package dev.kshl.kshlib.net;
 
+import lombok.Getter;
+
+@Getter
 public enum HTTPResponseCode {
     // Informational responses
     CONTINUE(100, "This interim response indicates that the client should continue the request or ignore the response if the request is already finished."), //
@@ -78,14 +81,6 @@ public enum HTTPResponseCode {
     HTTPResponseCode(int code, String description) {
         this.code = code;
         this.description = description;
-    }
-
-    public int getCode() {
-        return code;
-    }
-
-    public String getDescription() {
-        return description;
     }
 
     public String toStringCapitalized() {

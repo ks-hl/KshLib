@@ -2,108 +2,152 @@ package dev.kshl.kshlib.net;
 
 import dev.kshl.kshlib.misc.Timer;
 import org.json.JSONObject;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class WebServerTest {
-    @Test
-    @Timeout(value = 5000L)
-    public void testWebServer() throws IOException, ExecutionException, InterruptedException {
-        WebServer webServer = new TestWebServer() {
-            @Override
-            protected void onRequest(String sender, String endpoint) throws WebException {
-                if (endpoint.equals("/ban")) throw new WebException(HTTPResponseCode.FORBIDDEN);
-                info(String.format("    Rate Limiter [%s] %s", sender, endpoint));
-            }
+class WebServerTest {
 
-            @Override
-            public Response handle(Request request) throws WebException {
-                assert request.bodyJSON() != null;
-                return switch (request.endpoint()) {
-                    case "/" -> new Response().body(new JSONObject().put("msg", "hello!"));
-                    case "/1" -> {
-                        if (request.bodyJSON().has("bad"))
-                            throw new WebException(HTTPResponseCode.INSUFFICIENT_STORAGE);
-                        yield new Response().body(new JSONObject().put("success1", true));
-                    }
-                    case "/2" -> {
-                        if (request.bodyJSON().has("bad")) throw new WebException(HTTPResponseCode.CONFLICT);
-                        yield new Response().body(new JSONObject().put("success2", true));
-                    }
-                    case "/delay" -> {
-                        try {
-                            Thread.sleep(250);
-                        } catch (InterruptedException ignored) {
-                        }
-                        yield new Response().body(new JSONObject().put("delay", true));
-                    }
-                    case "/ban" -> new Response().body("");
-                    default -> null;
-                };
-            }
-        };
-        new Thread(webServer).start();
+    private TestWebServer webServer;
 
-        while (webServer.getPort() <= 0) //noinspection BusyWait
-            Thread.sleep(5);
+    @BeforeEach
+    public void init() throws InterruptedException {
+        webServer = new TestWebServer();
+        webServer.start();
 
-        assert Objects.requireNonNull(NetUtil.get("http://localhost:" + webServer.getPort(), false).request().getJSON()).getString("msg").equals("hello!");
-        assert Objects.requireNonNull(NetUtil.get("http://localhost:" + webServer.getPort() + "/", false).request().getJSON()).getString("msg").equals("hello!");
-        assert NetUtil.post("http://localhost:" + webServer.getPort() + "/1", new JSONObject().put("bad", 1).toString(), false).request().getResponseCode().getCode() == 507;
-        assert Objects.requireNonNull(NetUtil.post("http://localhost:" + webServer.getPort() + "/1", new JSONObject().toString(), false).request().getJSON()).getBoolean("success1");
-        assert NetUtil.post("http://localhost:" + webServer.getPort() + "/2", new JSONObject().put("bad", 1).toString()).request().getResponseCode().getCode() == 409;
-        assert Objects.requireNonNull(NetUtil.post("http://localhost:" + webServer.getPort() + "/2", new JSONObject().toString()).request().getJSON()).getBoolean("success2");
-        CompletableFuture<Void> future1 = new CompletableFuture<>();
-        CompletableFuture<Void> future2 = new CompletableFuture<>();
-        new Thread(() -> {
+        assertTrue(webServer.getPort() > 0);
+    }
+
+    private String baseUrl() {
+        return "http://localhost:" + webServer.getPort();
+    }
+
+    private static JSONObject getJson(String url) throws IOException {
+        return Objects.requireNonNull(NetUtil.get(url, false).request().getJSON());
+    }
+
+    private static JSONObject postJson(String url, JSONObject body) throws IOException {
+        return Objects.requireNonNull(NetUtil.post(url, body.toString(), false).request().getJSON());
+    }
+
+    private static HTTPResponseCode postCode(String url, JSONObject body, boolean withTlsFlag) throws IOException {
+        return NetUtil.post(url, body.toString(), withTlsFlag).request().getResponseCode();
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (webServer != null) {
             try {
-                assert Objects.requireNonNull(NetUtil.get("http://localhost:" + webServer.getPort() + "/delay").request().getJSON()).optBoolean("delay", false);
-                future1.complete(null);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+                webServer.close();
+            } catch (Exception ignored) {
             }
-        }).start();
-        new Thread(() -> {
-            Timer timer = new Timer();
-            try {
-                assert Objects.requireNonNull(NetUtil.get("http://localhost:" + webServer.getPort() + "/").request().getJSON()).optString("msg", "").equals("hello!");
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            assert timer.getMillis() < 50;
-            future2.complete(null);
-        }).start();
-        // If adding more tests, raise rate limit to equal number of tests
-
-        future1.get();
-        future2.get();
-
-        assert NetUtil.get("http://localhost:" + webServer.getPort() + "/ban").request().getResponseCode() == HTTPResponseCode.FORBIDDEN;
-
-        assert NetUtil.get("http://localhost:" + webServer.getPort() + "/").request().getResponseCode() == HTTPResponseCode.TOO_MANY_REQUESTS;
-
-        webServer.close();
+        }
     }
 
     @Test
-    public void testAnnotations() throws IOException, InterruptedException {
-        WebServer webServer = new TestWebServer() {
-            @Endpoint(
-                    value = "annotation,annotationCSV"
-            )
-            public Response annotation(Request request) {
-                return new Response().body("annotation");
-            }
-        };
+    @Timeout(5)
+        // seconds
+    void testWebServer() throws Exception {
         webServer.registerEndpoint(new Object() {
+
+            @WebServer.Endpoint
+            WebServer.Response root(WebServer.Request request) {
+                return new WebServer.Response().body(new JSONObject().put("msg", "hello!"));
+            }
+
+            @WebServer.Endpoint(value = {"/1", "/2"}, method = HTTPRequestType.POST)
+            WebServer.Response oneTwo(WebServer.Request request) throws WebServer.WebException {
+                if (request.bodyJSON() != null && request.bodyJSON().has("bad")) {
+                    throw new WebServer.WebException(HTTPResponseCode.BAD_REQUEST);
+                }
+                return new WebServer.Response().body(new JSONObject()
+                        .put("success" + request.endpoint().substring(1), true));
+            }
+
+            @WebServer.Endpoint("/delay")
+            WebServer.Response delay(WebServer.Request request) throws InterruptedException {
+                Thread.sleep(250);
+                return new WebServer.Response().body(new JSONObject().put("delay", true));
+            }
+
+            @WebServer.Endpoint("/ban")
+            WebServer.Response ban(WebServer.Request request) {
+                return new WebServer.Response().body("");
+            }
+        });
+
+        final String base = baseUrl();
+
+        // root GET (with and without trailing slash)
+        assertEquals("hello!", getJson(base).getString("msg"));
+        assertEquals("hello!", getJson(base + "/").getString("msg"));
+
+        // POST /1 and /2 (bad body -> 400; empty body -> success flags)
+        assertEquals(
+                HTTPResponseCode.BAD_REQUEST,
+                postCode(base + "/1", new JSONObject().put("bad", 1), false)
+        );
+        assertTrue(postJson(base + "/1", new JSONObject()).getBoolean("success1"));
+
+        assertEquals(
+                HTTPResponseCode.BAD_REQUEST,
+                postCode(base + "/2", new JSONObject().put("bad", 1), true /* matches original default */)
+        );
+        assertTrue(postJson(base + "/2", new JSONObject()).getBoolean("success2"));
+
+        CountDownLatch bothDone = new CountDownLatch(2);
+        @SuppressWarnings("resource")
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+
+        Future<Void> f1 = pool.submit(() -> {
+            assertTrue(getJson(base + "/delay").optBoolean("delay", false));
+            bothDone.countDown();
+            return null;
+        });
+
+        Future<Void> f2 = pool.submit(() -> {
+            Timer t = new Timer();
+            assertEquals("hello!", getJson(base + "/").optString("msg", ""));
+            assertTrue(t.getMillis() < 50, "Non-delayed request took too long: " + t.getMillis() + "ms");
+            bothDone.countDown();
+            return null;
+        });
+
+        // If adding more concurrent tests, raise rate limit in TestWebServer ctor accordingly.
+        assertTrue(bothDone.await(2, TimeUnit.SECONDS), "Concurrent requests did not complete in time");
+        f1.get();
+        f2.get();
+        pool.shutdown();
+    }
+
+    @Test
+    public void testRateLimiter() throws IOException {
+        // RateLimiter is covered more thoroughly in its own tests
+        webServer.exhaustRateLimiter();
+        assertEquals(HTTPResponseCode.TOO_MANY_REQUESTS, NetUtil.get(baseUrl(), false).request().getResponseCode());
+    }
+
+    @Test
+    void testAnnotations() throws Exception {
+        webServer.registerEndpoint(new Object() {
+            @WebServer.Endpoint({"annotation", "annotationCSV"})
+            public WebServer.Response annotation(WebServer.Request request) {
+                return new WebServer.Response().body("annotation");
+            }
+
             @WebServer.Endpoint(value = "/annotation2/")
             public WebServer.Response annotation2(WebServer.Request request) {
                 return new WebServer.Response().body("annotation2");
@@ -114,6 +158,8 @@ public class WebServerTest {
                 throw new WebServer.WebException(HTTPResponseCode.UNPROCESSABLE_ENTITY);
             }
         });
+
+        // bad signatures
         assertThrows(IllegalArgumentException.class, () -> webServer.registerEndpoint(new Object() {
             @WebServer.Endpoint
             public void method(WebServer.Request request) {
@@ -131,21 +177,19 @@ public class WebServerTest {
                 return null;
             }
         }));
-        new Thread(webServer).start();
 
-        //noinspection LoopConditionNotUpdatedInsideLoop
-        while (webServer.getPort() <= 0)
-            Thread.onSpinWait();
+        final String base = baseUrl();
 
-        assertEquals("annotation", NetUtil.get("http://localhost:" + webServer.getPort() + "/annotation").request().getBody());
-        assertEquals("annotation", NetUtil.get("http://localhost:" + webServer.getPort() + "/annotationCSV").request().getBody());
-        assertEquals("annotation2", NetUtil.get("http://localhost:" + webServer.getPort() + "/annotation2").request().getBody());
-        assertEquals(HTTPResponseCode.UNPROCESSABLE_ENTITY, NetUtil.get("http://localhost:" + webServer.getPort() + "/error422").request().getResponseCode());
+        assertEquals("annotation", NetUtil.get(base + "/annotation").request().getBody());
+        assertEquals("annotation", NetUtil.get(base + "/annotationCSV").request().getBody());
+        assertEquals("annotation2", NetUtil.get(base + "/annotation2").request().getBody());
+        assertEquals(HTTPResponseCode.UNPROCESSABLE_ENTITY,
+                NetUtil.get(base + "/error422").request().getResponseCode());
     }
 
     private static class TestWebServer extends WebServer {
-        public TestWebServer() {
-            super(0, 0, 1024, new RateLimiter(9, Long.MAX_VALUE), true);
+        TestWebServer() {
+            super(0, 0, 1024, new RateLimiter(100, Long.MAX_VALUE), true);
         }
 
         @Override
@@ -164,9 +208,9 @@ public class WebServerTest {
             System.err.println(msg);
         }
 
-        @Override
-        public Response handle(Request request) throws WebException {
-            return null;
+        void exhaustRateLimiter() {
+            //noinspection StatementWithEmptyBody
+            while (getRateLimiter().check("127.0.0.1")) ;
         }
     }
 }
