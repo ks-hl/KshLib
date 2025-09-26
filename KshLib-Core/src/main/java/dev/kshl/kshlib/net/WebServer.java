@@ -219,7 +219,9 @@ public abstract class WebServer implements Runnable, HttpHandler {
                 } catch (JSONException e) {
                     if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
                 }
-                request = new Request(requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
+                String host = t.getRequestHeaders().getFirst("Host");
+
+                request = new Request(host, requestTime, sender, endpoint, HTTPRequestType.valueOf(t.getRequestMethod()), t.getRequestHeaders(), query, requestString, jsonIn);
 
                 response = handleEndpoints(request);
                 if (response == null) response = handle(request);
@@ -461,7 +463,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
 
-    public record Request(long requestTime, String sender, String endpoint, HTTPRequestType type,
+    public record Request(String host, long requestTime, String sender, String endpoint, HTTPRequestType type,
                           @Nonnull Headers headers, @Nonnull Map<String, String> query,
                           @Nonnull String bodyString, @Nullable JSONObject bodyJSON) {
         @Nonnull
