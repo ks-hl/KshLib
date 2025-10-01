@@ -44,7 +44,7 @@ public class SQLAPIKeyManager {
                 updateDescription(id, description);
                 return new APIKeyPair(id, secret);
             } catch (SQLException e) {
-                if (!ConnectionManager.isConstraintViolation(e)) throw e;
+                if (!connectionManager.isConstraintViolation(e)) throw e;
             }
         }
 

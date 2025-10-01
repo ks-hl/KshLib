@@ -21,7 +21,7 @@ class TestConnectionManager extends ConnectionManager {
 
     @Override
     protected boolean isDebug() {
-        return false;
+        return true;
     }
 
     @Override

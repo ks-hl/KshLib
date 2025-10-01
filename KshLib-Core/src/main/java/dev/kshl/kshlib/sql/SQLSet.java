@@ -51,7 +51,7 @@ public abstract class SQLSet<T> {
             cache(value, true);
             return true;
         } catch (SQLException e) {
-            if (!ConnectionManager.isConstraintViolation(e)) throw e;
+            if (!connectionManager.isConstraintViolation(e)) throw e;
             return false;
         }
     }

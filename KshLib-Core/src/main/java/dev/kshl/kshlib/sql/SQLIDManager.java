@@ -58,7 +58,7 @@ public abstract class SQLIDManager<V> {
                     try {
                         sql.execute(connection, "INSERT INTO " + table + " (id,value) VALUES (?,?)", id, toDatabaseObject(value));
                     } catch (SQLException e) {
-                        if (ConnectionManager.isConstraintViolation(e)) {
+                        if (sql.isConstraintViolation(e)) {
                             System.err.println("Found duplicate ID `" + id + "` for value `" + value + "` in table " + table);
                         }
                     }
@@ -116,7 +116,7 @@ public abstract class SQLIDManager<V> {
                             sql.execute(connection, "INSERT INTO " + table + " (value) VALUES (?)", toDatabaseObject(value));
                         }
                     } catch (SQLException e) {
-                        if (requireNew || !ConnectionManager.isConstraintViolation(e)) throw e;
+                        if (requireNew || !sql.isConstraintViolation(e)) throw e;
                     }
                     return sql.query(connection, "SELECT id FROM " + table + " WHERE value=?", rs -> {
                         if (!rs.next()) return Optional.empty();
@@ -156,7 +156,7 @@ public abstract class SQLIDManager<V> {
             try {
                 getIDRequireNew(id);
             } catch (SQLException e) {
-                if (ConnectionManager.isConstraintViolation(e)) continue;
+                if (sql.isConstraintViolation(e)) continue;
                 throw e;
             }
             return id;

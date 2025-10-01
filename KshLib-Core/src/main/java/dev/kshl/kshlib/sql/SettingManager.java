@@ -284,7 +284,7 @@ public abstract class SettingManager<T> {
                 try {
                     sql.execute(connection, "INSERT INTO " + getTableName() + " (uid,setting,value) VALUES (?,?,?)", uid, setting, amount);
                 } catch (SQLException e) {
-                    if (!ConnectionManager.isConstraintViolation(e)) throw e;
+                    if (!sql.isConstraintViolation(e)) throw e;
                     sql.execute(connection, "UPDATE " + getTableName() + " SET value=value+? WHERE uid=? AND setting=?", amount, uid, setting);
                 }
                 cache.remove(new Pair<>(uid, setting));

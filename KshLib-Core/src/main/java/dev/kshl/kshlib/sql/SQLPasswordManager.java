@@ -79,7 +79,7 @@ public class SQLPasswordManager {
             try {
                 connectionManager.execute(connection, "INSERT INTO " + table + " (created,uid) VALUES (?,?)", now, uid);
             } catch (SQLException e) {
-                if (requireNew || !ConnectionManager.isConstraintViolation(e)) throw e;
+                if (requireNew || !connectionManager.isConstraintViolation(e)) throw e;
             }
             try {
                 connectionManager.execute(connection, "UPDATE " + table + " SET hash=?,last_changed=?,expires=? WHERE uid=?", HashPBKDF2.hash(password, type.iterationCount), now, expiresAt, uid);

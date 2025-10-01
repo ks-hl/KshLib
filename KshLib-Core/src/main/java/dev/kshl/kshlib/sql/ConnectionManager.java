@@ -12,6 +12,7 @@ import dev.kshl.kshlib.function.ThrowingFunction;
 import dev.kshl.kshlib.function.ThrowingRunnable;
 import dev.kshl.kshlib.function.ThrowingSupplier;
 import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
+import lombok.Getter;
 
 import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
@@ -42,7 +43,9 @@ import java.util.stream.Stream;
 
 public abstract class ConnectionManager implements Closeable, AutoCloseable {
     private final ConnectionPool connectionPool;
+    @Getter
     private boolean closed;
+    @Getter
     private boolean ready;
     private boolean shuttingDown;
 
@@ -69,9 +72,37 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         return str.replaceAll("[^\\u0020-\\u007F]", "¿");
     }
 
-    public static boolean isConstraintViolation(Exception e) {
+    public boolean isConstraintViolation(Exception e) {
         if (!(e instanceof SQLException sqlException)) return false;
-        return Set.of(19, 1062, 1169, 4025).contains(sqlException.getErrorCode());
+
+        for (SQLException cur = sqlException; cur != null; cur = cur.getNextException()) {
+            String state = cur.getSQLState();
+            if (state != null && state.startsWith("23")) return true;
+        }
+
+        final int code = sqlException.getErrorCode();
+        if (isMySQL()) {
+            return switch (code) {
+                case 1062, // duplicate key
+                     1022, // duplicate key (ALTER TABLE, etc.)
+                     1451, // cannot delete/update parent row: FK constraint
+                     1452, // cannot add/update child row: FK constraint
+                     3819 // CHECK constraint failed
+                        -> true;
+                default -> false;
+            };
+        } else {
+            return switch (code) {
+                case 19, // SQLITE_CONSTRAINT (generic)
+                     1555, // SQLITE_CONSTRAINT_PRIMARYKEY
+                     2067, // SQLITE_CONSTRAINT_UNIQUE
+                     275, // SQLITE_CONSTRAINT_CHECK
+                     787, // SQLITE_CONSTRAINT_FOREIGNKEY
+                     1299 // SQLITE_CONSTRAINT_NOTNULL
+                        -> true;
+                default -> false;
+            };
+        }
     }
 
     public final void init() throws SQLException {
@@ -568,11 +599,6 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      * @return Whether to generate debug statements and call {@link #debug(String)}
      */
     protected abstract boolean isDebug();
-
-    @SuppressWarnings("unused")
-    public boolean isReady() {
-        return ready;
-    }
 
     public boolean tableExists(String table) throws SQLException, BusyException {
         return execute((ConnectionFunction<Boolean>) connection -> tableExists(connection, table), 3000L);

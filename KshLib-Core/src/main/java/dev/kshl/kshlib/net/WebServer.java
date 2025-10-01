@@ -153,6 +153,8 @@ public abstract class WebServer implements Runnable, HttpHandler {
             JSONObject requestBodyJSON = null;
 
             try {
+                String host = t.getRequestHeaders().getFirst("Host");
+
                 sender = parseXForwardedFor(t.getRemoteAddress().getAddress().toString(), t.getRequestHeaders());
                 if (sender.startsWith("/")) sender = sender.substring(1);
                 endpoint = Optional.ofNullable(t.getRequestURI().getPath()).map(this::normalizeEndpointString).orElse("/");
@@ -170,6 +172,7 @@ public abstract class WebServer implements Runnable, HttpHandler {
                         }
                         onRequest(sender, endpoint);
                         if (!global) {
+                            request = new Request(host, requestTime, sender, endpoint, requestType, t.getRequestHeaders(), query, null, null);
                             throw new WebException(HTTPResponseCode.TOO_MANY_REQUESTS);
                         }
                     }
@@ -182,13 +185,13 @@ public abstract class WebServer implements Runnable, HttpHandler {
 
                     try {
                         requestBodyJSON = new JSONObject(requestBody);
-                    } catch (JSONException e) {
-                        if (requireJSONInput) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON");
+                    } catch (JSONException ignored) {
                     }
                 }
-                String host = t.getRequestHeaders().getFirst("Host");
 
                 request = new Request(host, requestTime, sender, endpoint, requestType, t.getRequestHeaders(), query, requestBody, requestBodyJSON);
+
+                if (requireJSONInput && requestBodyJSON == null) throw new WebException(HTTPResponseCode.BAD_REQUEST, "Invalid JSON in request body");
 
                 response = handleEndpoints(request);
                 if (response == null) {
@@ -599,5 +602,12 @@ public abstract class WebServer implements Runnable, HttpHandler {
     }
 
     private record EndpointContainer(Object handlerInstance, Method method, Endpoint annotation) {
+    }
+
+    public static WebServer.Response redirectFound(Response response, String location) {
+        return response
+                .code(HTTPResponseCode.FOUND)
+                .header("Location", location)
+                .header("Cache-Control", "no-store");
     }
 }

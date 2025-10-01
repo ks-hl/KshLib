@@ -134,11 +134,11 @@ public class MapCache<K, V> extends HashMap<K, V> {
 
         Pair<Object, Long> element;
         while ((element = timeAddedQueue.peek()) != null) {
-            if (currentTime >= element.getValue()) timeAddedQueue.poll();
+            if (currentTime >= element.getRight()) timeAddedQueue.poll();
             else break;
-            Long trueExpiration = trueTimeAdded.get(element.getKey());
+            Long trueExpiration = trueTimeAdded.get(element.getLeft());
             if (trueExpiration != null && currentTime >= trueExpiration) {
-                removed.add(remove(element.getKey()));
+                removed.add(remove(element.getLeft()));
             }
         }
         return removed;

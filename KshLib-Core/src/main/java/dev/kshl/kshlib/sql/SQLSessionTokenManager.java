@@ -4,6 +4,8 @@ import dev.kshl.kshlib.crypto.CodeGenerator;
 import dev.kshl.kshlib.crypto.HashPBKDF2;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.misc.MapCache;
+import lombok.Getter;
+
 import javax.annotation.Nullable;
 
 import java.security.NoSuchAlgorithmException;
@@ -13,6 +15,7 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
+@Deprecated
 public class SQLSessionTokenManager {
     public static final int TOKEN_LENGTH = 48;
     private static final int HASH_SALT_BYTES = 16;
@@ -20,6 +23,7 @@ public class SQLSessionTokenManager {
     private final ConnectionManager connectionManager;
     private final String table;
     private final MapCache<Integer, SessionToken> tokens = new MapCache<>(60000L, 10000L, true);
+    @Getter
     private final long sessionDuration;
     private final boolean ipSticky;
     private boolean initialized;
@@ -67,7 +71,7 @@ public class SQLSessionTokenManager {
                 int id = random.nextInt(10000000, Integer.MAX_VALUE);
                 return put(uid, ip, id, secret);
             } catch (SQLException e) {
-                if (!ConnectionManager.isConstraintViolation(e)) throw e;
+                if (!connectionManager.isConstraintViolation(e)) throw e;
             }
         }
         throw new IllegalStateException("Failed to generate token after 10000 attempts. Buy a lottery ticket.");
@@ -167,10 +171,6 @@ public class SQLSessionTokenManager {
     }
 
     public record SessionToken(int uid, int token_id, long expires, @Nullable String ip, String token) {
-    }
-
-    public long getSessionDuration() {
-        return sessionDuration;
     }
 
     public String getTableName() {
