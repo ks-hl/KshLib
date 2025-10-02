@@ -375,16 +375,15 @@ public abstract class WebServer implements Runnable, HttpHandler {
     private List<EndpointContainer> getEndpointAnnotatedMethods(Object endpointHandler) {
         List<EndpointContainer> methods = new ArrayList<>();
         for (Method method : endpointHandler.getClass().getDeclaredMethods()) {
-            if (Modifier.isStatic(method.getModifiers())) continue;
-            if (!method.canAccess(endpointHandler)) continue;
-            Endpoint endpointAnnotation = null;
-            for (Annotation annotation : method.getDeclaredAnnotations()) {
-                if (annotation instanceof Endpoint endpoint1) {
-                    endpointAnnotation = endpoint1;
-                    break;
-                }
-            }
+            Endpoint endpointAnnotation = getAnnotation(method);
             if (endpointAnnotation == null) continue;
+
+            if (Modifier.isStatic(method.getModifiers())) {
+                throw new IllegalArgumentException("Methods annotated with @Endpoint must not be static");
+            }
+            if (!method.canAccess(endpointHandler)) {
+                throw new IllegalArgumentException("Methods annotated with @Endpoint must be public and accessible");
+            }
 
             Class<?>[] parameters = method.getParameterTypes();
             if (parameters.length != 1 || !Objects.equals(parameters[0], Request.class))
@@ -395,6 +394,15 @@ public abstract class WebServer implements Runnable, HttpHandler {
             methods.add(new EndpointContainer(endpointHandler, method, endpointAnnotation));
         }
         return methods;
+    }
+
+    private Endpoint getAnnotation(Method method) {
+        for (Annotation annotation : method.getDeclaredAnnotations()) {
+            if (annotation instanceof Endpoint endpoint1) {
+                return endpoint1;
+            }
+        }
+        return null;
     }
 
     /**

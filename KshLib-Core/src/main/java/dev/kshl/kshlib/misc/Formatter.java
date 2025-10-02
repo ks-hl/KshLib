@@ -66,6 +66,11 @@ public class Formatter {
         return out;
     }
 
+
+    public static String toString(double d, int decimalPlaces) {
+        return toString(d, decimalPlaces, true, true);
+    }
+
     public static String[] splitAndInclude(String text, String regex) {
         if (regex.isEmpty()) return text.split(regex);
         Pattern pattern = Pattern.compile(regex);
