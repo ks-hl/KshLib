@@ -74,17 +74,25 @@ public class SQLUsernameManager implements ISQLManager {
         Objects.requireNonNull(username, "Username must not be null");
         if (uid <= 0) throw new IllegalArgumentException("UID must be > 0");
 
+        String stored = getUsername(uid).orElse(null);
         long now = System.currentTimeMillis();
-        sql.executeTransaction(connection -> {
-            if (sql.isMySQL()) {
-                // MySQL: single statement handles both insert and update
-                sql.execute(connection,
-                        "INSERT INTO " + table + " (time,uid,username) VALUES (?,?,?) ON DUPLICATE KEY UPDATE time=VALUES(time)", now, uid, username);
-            } else {
-                if (sql.executeReturnRows(connection, "INSERT OR IGNORE INTO " + table + " (time,uid,username) VALUES (?,?,?)", now, uid, username) > 0) return;
-                sql.execute(connection, "UPDATE " + table + " SET time=? WHERE uid=? AND username=?", now, uid, username);
-            }
-        }, 3000L);
+        if (sql.isMySQL()) {
+            sql.execute(String.format("""
+                    INSERT INTO %s (time, uid, username)
+                    VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE time = VALUES(time)
+                    """, table), 3000L, now, uid, username);
+        } else {
+            sql.execute(String.format("""
+                    INSERT INTO %s (time, uid, username)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(uid, username) DO UPDATE SET time = excluded.time
+                    """, table), 3000L, now, uid, username);
+        }
+
+        if (stored != null && !stored.equals(username)) {
+            recentUsernames.remove(stored);
+        }
         cacheUIDToUsername.remove(uid);
         cacheUsernameToUID.remove(username.toLowerCase());
         cache(uid, username);
@@ -128,7 +136,15 @@ public class SQLUsernameManager implements ISQLManager {
             if (recentUsernamesInitialized) {
                 throw new IllegalStateException("recentUsernames already initialized");
             }
-            sql.query(connection, "SELECT username FROM " + table + " ORDER BY time DESC LIMIT ?", rs -> {
+            sql.query(connection, String.format("""
+                    SELECT username FROM (
+                      SELECT username, ROW_NUMBER()
+                      OVER (PARTITION BY uid ORDER BY time DESC) AS rn
+                      FROM %s
+                    ) t
+                    WHERE rn = 1
+                    LIMIT ?
+                    """, table), rs -> {
                 while (rs.next()) {
                     String name = rs.getString(1);
                     if (name == null) continue;
@@ -172,16 +188,16 @@ public class SQLUsernameManager implements ISQLManager {
 
         Optional<Pair<Integer, String>> uidName = sql.query(
                 String.format("""
-            SELECT u.uid, u.username
-            FROM %1$s u
-            WHERE u.uid = (
-                SELECT uid FROM %1$s
-                WHERE username = ? %2$s
-                ORDER BY time DESC LIMIT 1
-            )
-            ORDER BY u.time DESC
-            LIMIT 1
-            """, table, sql.isMySQL() ? "" : "COLLATE NOCASE"),
+                        SELECT u.uid, u.username
+                        FROM %1$s u
+                        WHERE u.uid = (
+                            SELECT uid FROM %1$s
+                            WHERE username = ? %2$s
+                            ORDER BY time DESC LIMIT 1
+                        )
+                        ORDER BY u.time DESC
+                        LIMIT 1
+                        """, table, sql.isMySQL() ? "" : "COLLATE NOCASE"),
                 rs -> {
                     if (!rs.next()) return Optional.empty();
                     return Optional.of(new Pair<>(rs.getInt(1), rs.getString(2)));

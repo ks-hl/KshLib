@@ -1,94 +1,210 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionConsumer;
 import dev.kshl.kshlib.misc.Pair;
 
 import java.sql.SQLException;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SQLUsernameManagerTest {
 
-    @DatabaseTest
-    public void testSQLUsernameManager(ConnectionManager connectionManager) throws SQLException, BusyException {
+    /**
+     * Helper to build a clean manager and init the table for each test.
+     */
+    private SQLUsernameManager newManager(ConnectionManager connectionManager) throws SQLException, BusyException {
         connectionManager.execute("DROP TABLE IF EXISTS usernames", 3000L);
         SQLUsernameManager usernameManager = new SQLUsernameManager(connectionManager, "usernames") {
             @Override
             void cache(Integer uid, String username) {
-                // no cache
+                // disable external caching side-effects for tests
+                super.cache(uid, username);
+            }
+        };
+        connectionManager.execute(usernameManager::init, 3000L);
+        return usernameManager;
+    }
+
+    // --- Basic initialization / empty state -------------------------------------------------------
+    @DatabaseTest
+    public void init_createsEmptyState(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        assertTrue(m.getUsername(1).isEmpty());
+        assertTrue(m.getUID("nobody").isEmpty());
+    }
+
+    // --- Insert and retrieve (UID -> username) ---------------------------------------------------
+    @DatabaseTest
+    public void updateAndGetUsername(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        m.updateUsername(1, "testuser");
+        Optional<String> u = m.getUsername(1);
+        assertTrue(u.isPresent());
+        assertEquals("testuser", u.get());
+    }
+
+    // --- Case-insensitive username lookup and (UID, username) pair -------------------------------
+    @DatabaseTest
+    public void getUIDAndUsername_caseInsensitive(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        m.updateUsername(1, "testuser");
+        Optional<Pair<Integer, String>> p = m.getUIDAndUsername("TESTUSER");
+        assertTrue(p.isPresent());
+        assertEquals(1, p.get().getLeft().intValue());
+        assertEquals("testuser", p.get().getRight());
+    }
+
+    // --- “Most recent UID wins” for the same username --------------------------------------------
+    @DatabaseTest
+    public void mostRecentUIDWinsForSameUsername(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        m.updateUsername(1, "testuser");
+        m.updateUsername(2, "testuser");
+        var uid = m.getUID("testuser");
+        assertTrue(uid.isPresent());
+        assertEquals(2, uid.get().intValue());
+
+        // Insert another, ensure it becomes most recent
+        m.updateUsername(4, "testuser");
+        uid = m.getUID("testuser");
+        assertTrue(uid.isPresent());
+        assertEquals(4, uid.get().intValue());
+    }
+
+    // --- Non-existent username returns empty ------------------------------------------------------
+    @DatabaseTest
+    public void getUID_nonExistent_returnsEmpty(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        assertTrue(m.getUID("nonexistentuser").isEmpty());
+    }
+
+    // --- Case-insensitive insert & lookup for different users ------------------------------------
+    @DatabaseTest
+    public void caseInsensitiveLookup_differentUser(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        m.updateUsername(3, "AnotherUser");
+        var uid = m.getUID("anotheruser");
+        assertTrue(uid.isPresent());
+        assertEquals(3, uid.get().intValue());
+    }
+
+    // --- Null / invalid argument handling ---------------------------------------------------------
+    @DatabaseTest
+    public void nullAndInvalidHandling(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        assertTrue(m.getUsername(-1).isEmpty());
+        assertTrue(m.getUID(null).isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> m.updateUsername(0, "name"));
+        assertThrows(NullPointerException.class, () -> m.updateUsername(1, null));
+    }
+
+    // --- Username change: old username maps to latest UID & new username is reflected ------------
+    @DatabaseTest
+    public void usernameChangeOldAliasResolvesToLatestUID(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        m.updateUsername(4, "testuser");
+        m.updateUsername(4, "newuser");
+
+        // New name resolves to UID 4
+        var uid = m.getUID("newuser");
+        assertTrue(uid.isPresent());
+        assertEquals(4, uid.get().intValue());
+
+        // Old alias should still resolve to the latest (UID 4) and latest username (“newuser”)
+        var pair = m.getUIDAndUsername("testuser").orElseThrow();
+        assertEquals(4, pair.getLeft().intValue());
+        assertEquals("newuser", pair.getRight());
+
+        // UID -> username path reflects the latest username
+        var name = m.getUsername(4).orElseThrow();
+        assertEquals("newuser", name);
+    }
+
+    // --- Repeat history for a single UID ----------------------------------------------------------
+    @DatabaseTest
+    public void repeatHistoryForSingleUID(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        m.updateUsername(1, "1");
+        assertEquals("1", m.getUsername(1).orElseThrow());
+        m.updateUsername(1, "2");
+        assertEquals("2", m.getUsername(1).orElseThrow());
+        m.updateUsername(1, "1");
+        assertEquals("1", m.getUsername(1).orElseThrow());
+    }
+
+    // --- Recent usernames lifecycle (extra coverage) ----------------------------------------------
+    @DatabaseTest
+    public void recentUsernames_mustBeInitialized_thenQueryable(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        // Not initialized -> methods should throw
+        assertThrows(IllegalStateException.class, () -> m.getRecentUsernamesStartingWith("t"));
+        assertThrows(IllegalStateException.class, m::getRecentUsernamesSize);
+
+        // Seed some data
+        m.updateUsername(10, "Tom");
+        m.updateUsername(11, "tony");
+        m.updateUsername(12, "Alice");
+        m.updateUsername(13, "ALISON");
+        m.updateUsername(13, "ALISON2");
+
+        // Populate and query
+        cm.execute((ConnectionConsumer) connection -> m.populateRecentUsernames(connection, 5000), 3000L);
+        assertTrue(m.getRecentUsernamesSize() >= 4);
+
+        Set<String> tNames = m.getRecentUsernamesStartingWith("to");
+        assertTrue(tNames.contains("Tom"));
+        assertTrue(tNames.contains("tony"));
+
+        // Cannot populate twice
+        assertThrows(IllegalStateException.class, () ->
+                cm.execute((ConnectionConsumer) connection -> m.populateRecentUsernames(connection, 5000), 3000L)
+        );
+
+        // Ensure replaced usernames are not in recent
+        m.updateUsername(10, "Tom2");
+        assertFalse(m.getRecentUsernamesStartingWith("to").contains("Tom"));
+        assertTrue(m.getRecentUsernamesStartingWith("to").contains("Tom2"));
+        assertFalse(m.getRecentUsernamesStartingWith("al").contains("ALISON"));
+        assertTrue(m.getRecentUsernamesStartingWith("al").contains("ALISON2"));
+    }
+
+    // --- UUID bridging helpers don’t crash for unknowns (extra coverage) -------------------------
+    @DatabaseTest
+    public void uuidBridging_unknownsReturnEmpty(ConnectionManager cm) throws Exception {
+        SQLUsernameManager m = newManager(cm);
+
+        // Minimal fake for SQLIDManager.UUIDText that returns empty for any id/uuid
+        SQLIDManager.UUIDText fake = new SQLIDManager.UUIDText(cm, "ids") {
+            @Override
+            public Optional<UUID> getValueOpt(int id) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<Integer> getIDOpt(UUID uuid, boolean createIfMissing) {
+                return Optional.empty();
             }
         };
 
-        // Initialize the table
-        connectionManager.execute(usernameManager::init, 3000L);
-
-        // Test updating username for the first time
-        usernameManager.updateUsername(1, "testuser");
-        Optional<String> retrievedUsername = usernameManager.getUsername(1);
-        assertTrue(retrievedUsername.isPresent());
-        assertEquals("testuser", retrievedUsername.get());
-
-        // Test retrieving UID by username (case insensitive check)
-        Optional<Pair<Integer, String>> retrievedUIDAndUsername = usernameManager.getUIDAndUsername("TESTUSER");
-        assertTrue(retrievedUIDAndUsername.isPresent());
-        assertEquals(1, retrievedUIDAndUsername.get().getLeft().intValue());
-        assertEquals("testuser", retrievedUIDAndUsername.get().getRight());
-
-        // Test updating the username with a different UID (more recent entry)
-        usernameManager.updateUsername(2, "testuser");
-        var retrievedUID = usernameManager.getUID("testuser");
-        assertTrue(retrievedUID.isPresent());
-        assertEquals(2, retrievedUID.get().intValue()); // Should return the most recent UID
-
-        // Test for non-existent username
-        retrievedUID = usernameManager.getUID("nonexistentuser");
-        assertFalse(retrievedUID.isPresent());
-
-        // Test inserting another user with a different case
-        usernameManager.updateUsername(3, "AnotherUser");
-        retrievedUID = usernameManager.getUID("anotheruser");
-        assertTrue(retrievedUID.isPresent());
-        assertEquals(3, retrievedUID.get().intValue());
-
-        // Verify most recent entry is returned when multiple entries exist for the same username
-        usernameManager.updateUsername(4, "testuser");
-        retrievedUID = usernameManager.getUID("testuser");
-        assertTrue(retrievedUID.isPresent());
-        assertEquals(4, retrievedUID.get().intValue()); // Should return the most recent UID (4)
-
-        // Test for handling null in getUsername
-        Optional<String> nullUsername = usernameManager.getUsername(-1);
-        assertFalse(nullUsername.isPresent());
-
-        // Test for handling null in getUID
-        Optional<Integer> nullUID = usernameManager.getUID(null);
-        assertFalse(nullUID.isPresent());
-
-        // Test if a user changes their username
-        usernameManager.updateUsername(4, "newuser");
-        retrievedUID = usernameManager.getUID("newuser");
-        assertTrue(retrievedUID.isPresent());
-        assertEquals(4, retrievedUID.get().intValue()); // Should return the updated UID (4)
-
-        // Ensure old username still returns the UID
-        var retrieved = usernameManager.getUIDAndUsername("testuser").orElseThrow();
-        assertEquals(4, retrieved.getLeft());
-        assertEquals("newuser", retrieved.getRight());
-
-        // Ensure the username associated with UID 4 is updated
-        retrievedUsername = usernameManager.getUsername(4);
-        assertTrue(retrievedUsername.isPresent());
-        assertEquals("newuser", retrievedUsername.get());
-
-        // Repeat history
-        usernameManager.updateUsername(1, "1");
-        assertEquals("1", usernameManager.getUsername(1).orElseThrow());
-        usernameManager.updateUsername(1, "2");
-        assertEquals("2", usernameManager.getUsername(1).orElseThrow());
-        usernameManager.updateUsername(1, "1");
-        assertEquals("1", usernameManager.getUsername(1).orElseThrow());
+        assertTrue(m.getUUID("ghost", fake).isEmpty());
+        assertTrue(m.getUUIDAndUsername("ghost", fake).isEmpty());
+        assertTrue(m.getUsername(UUID.randomUUID(), fake).isEmpty());
     }
 }
