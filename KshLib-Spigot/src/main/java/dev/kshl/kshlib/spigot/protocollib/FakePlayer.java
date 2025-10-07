@@ -7,6 +7,7 @@ import com.comphenix.protocol.wrappers.EnumWrappers;
 import com.comphenix.protocol.wrappers.PlayerInfoData;
 import com.comphenix.protocol.wrappers.WrappedChatComponent;
 import com.comphenix.protocol.wrappers.WrappedGameProfile;
+import lombok.Setter;
 import org.bukkit.Location;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
@@ -15,6 +16,7 @@ import org.bukkit.plugin.Plugin;
 import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,15 +26,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class FakePlayer extends FakeLivingEntity {
     private final Map<UUID, String> teams = new HashMap<>();
     private final boolean noCollide;
+    @Setter
     private Skin skin;
 
     public FakePlayer(Plugin plugin, String name, Skin skin, Location loc, boolean alwaysLookAtTarget, boolean noCollide) {
         super(plugin, EntityType.PLAYER, name, loc, alwaysLookAtTarget, name == null);
         this.noCollide = noCollide;
-        this.skin = skin;
-    }
-
-    public void setSkin(Skin skin) {
         this.skin = skin;
     }
 
@@ -42,6 +41,7 @@ public class FakePlayer extends FakeLivingEntity {
 
         PacketContainer packet = new PacketContainer(PacketType.Play.Server.PLAYER_INFO);
         packet.getPlayerInfoActions().modify(0, set -> {
+            if (set == null) set = new HashSet<>();
             set.add(EnumWrappers.PlayerInfoAction.ADD_PLAYER);
             set.add(EnumWrappers.PlayerInfoAction.UPDATE_LISTED);
             return set;
@@ -49,7 +49,9 @@ public class FakePlayer extends FakeLivingEntity {
         WrappedGameProfile profile = new WrappedGameProfile(uuid, name);
         if (skin != null) profile.getProperties().put("textures", skin.wrap());
         // TODO fake player still being added to list?
-        packet.getPlayerInfoDataLists().write(1, List.of(new PlayerInfoData(uuid, 0, false, EnumWrappers.NativeGameMode.SURVIVAL, profile, WrappedChatComponent.fromLegacyText(name))));
+        packet.getPlayerInfoDataLists().write(1, List.of(
+                new PlayerInfoData(uuid, 0, false, EnumWrappers.NativeGameMode.SURVIVAL, profile, WrappedChatComponent.fromLegacyText(name))
+        ));
         protocol.sendServerPacket(player, packet);
 
 

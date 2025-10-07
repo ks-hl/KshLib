@@ -10,7 +10,7 @@ import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.reflect.StructureModifier;
 import com.comphenix.protocol.wrappers.EnumWrappers;
 import com.comphenix.protocol.wrappers.WrappedDataValue;
-import dev.kshl.kshlib.concurrent.ConcurrentMap;
+import lombok.Getter;
 import org.bukkit.Location;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
@@ -24,17 +24,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class FakeEntity {
     public final EntityType type;
     protected final int id;
     protected final UUID uuid;
+    @Getter
     protected final String name;
     protected final ProtocolManager protocol = ProtocolLibrary.getProtocolManager();
-    protected final ConcurrentMap<Map<UUID, Player>, UUID, Player> audience = new ConcurrentMap<>(new HashMap<>());
+    protected final Map<UUID, Player> audience = new ConcurrentHashMap<>();
     protected final boolean hideName;
     protected Location loc;
+    @Getter
     protected long lastMoved;
+    private final Map<UUID, Long> lastInteraction = new ConcurrentHashMap<>();
 
     public FakeEntity(Plugin plugin, EntityType type, String name, Location loc, boolean hideName) {
         this.type = type;
@@ -47,13 +51,36 @@ public abstract class FakeEntity {
         protocol.addPacketListener(new PacketAdapter(plugin, ListenerPriority.NORMAL, PacketType.Play.Client.USE_ENTITY) {
             @Override
             public void onPacketReceiving(PacketEvent event) {
-                int entityID = event.getPacket().getIntegers().read(0);
-                if (entityID != id || !audience.containsKey(event.getPlayer().getUniqueId())) return;
-                EnumWrappers.EntityUseAction action = event.getPacket().getEnumEntityUseActions().read(0).getAction();
-                EnumWrappers.Hand hand = event.getPacket().getHands().read(0);
-                boolean sneaking = event.getPacket().getBooleans().read(0);
+                try {
+                    int entityID = event.getPacket().getIntegers().read(0);
+                    if (entityID != id) return;
+                    if (!audience.containsKey(event.getPlayer().getUniqueId())) return;
 
-                onInteractEvent(event.getPlayer(), action, hand, sneaking);
+                    synchronized (lastInteraction) {
+                        lastInteraction.values().removeIf(l -> l < System.currentTimeMillis() - 200);
+                        if (lastInteraction.containsKey(event.getPlayer().getUniqueId())) return;
+                        lastInteraction.put(event.getPlayer().getUniqueId(), System.currentTimeMillis());
+                    }
+
+                    EnumWrappers.EntityUseAction action = event.getPacket().getEnumEntityUseActions().read(0).getAction();
+                    EnumWrappers.Hand hand;
+                    if (event.getPacket().getHands().size() == 0) {
+                        hand = EnumWrappers.Hand.MAIN_HAND;
+                    } else {
+                        hand = event.getPacket().getHands().read(0);
+                    }
+                    boolean sneaking;
+                    if (event.getPacket().getBooleans().size() == 0) {
+                        sneaking = false;
+                    } else {
+                        sneaking = event.getPacket().getBooleans().read(0);
+                    }
+
+                    System.out.println("Interacting with fake entity " + name + " (" + type + ") with action " + action);
+                    onInteractEvent(event.getPlayer(), action, hand, sneaking);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         });
     }
@@ -83,17 +110,6 @@ public abstract class FakeEntity {
         packet.getBytes().write(1, (byte) (loc.getPitch() * 256f / 360f));
         packet.getBytes().write(2, (byte) (loc.getYaw() * 256f / 360f)); // head angle
         protocol.sendServerPacket(player, packet);
-
-//        if (name != null) {
-//            packet = new PacketContainer(PacketType.Play.Server.ENTITY_METADATA);
-//            StructureModifier<List<WrappedDataValue>> watchableAccessor = packet.getDataValueCollectionModifier();
-//            watchableAccessor.write(0, List.of(
-//                    new WrappedDataValue(16, //
-//                            WrappedDataWatcher.Registry.getNBTCompoundSerializer(), //
-//                            NbtFactory.of("CustomName", "[{\"text\":\"" + name + "\"}]"))) //
-//            );
-//            protocol.sendServerPacket(player, packet);
-//        }
     }
 
     public static void sendMetadata(Player player, int entityID, List<WrappedDataValue> meta) {
@@ -125,25 +141,16 @@ public abstract class FakeEntity {
     }
 
     protected void sendToAll(PacketContainer packet) {
-        audience.consume(audience -> audience.forEach((uuid, player) -> protocol.sendServerPacket(player, packet)));
+        audience.forEach((uuid, player) -> protocol.sendServerPacket(player, packet));
     }
 
     public int getID() {
         return id;
     }
 
-    public String getName() {
-        return name;
-    }
-
-    public long getLastMoved() {
-        return lastMoved;
-    }
-
-
     public final Collection<Player> removeAll() {
         Set<Player> out = new HashSet<>();
-        audience.forEachCopied((u, p) -> {
+        audience.forEach((u, p) -> {
             remove(p);
             out.add(p);
         });
