@@ -32,8 +32,8 @@ public class FakeLivingEntity extends FakeEntity {
     }
 
     @Override
-    public void move(Location loc, boolean onGround) {
-        PacketContainer packet = getMoveOrTeleportPacket(loc, onGround);
+    public void move(Location loc) {
+        PacketContainer packet = getMoveOrTeleportPacket(loc);
         if (alwaysLookAtTarget) {
             audience.forEach((u, player) -> {
                 Vector lookVector = player.getLocation().toVector().subtract(loc.toVector());
@@ -42,21 +42,19 @@ public class FakeLivingEntity extends FakeEntity {
                 while (yaw < -180.0f) yaw += 360.0f;
                 while (yaw > 180.0f) yaw -= 360.0f;
 
-                loc.setPitch(pitch);
-                loc.setYaw(yaw);
-
                 packet.getBytes().write(0, (byte) (yaw * 256f / 360f));
                 packet.getBytes().write(1, (byte) (pitch * 256f / 360f));
                 protocol.sendServerPacket(player, packet);
 
-                updateHead(List.of(player));
+                sendHead(yaw, List.of(player));
             });
         } else {
             sendToAll(packet);
 
             // Update head
 
-            updateHead(audience.values());
+            sendBodyLook(loc.getYaw(), loc.getPitch(), audience.values());
+            sendHead(loc.getYaw(), audience.values());
         }
 
         lastMoved = System.currentTimeMillis();
@@ -107,14 +105,14 @@ public class FakeLivingEntity extends FakeEntity {
         super.spawn(player);
         setPosture(currentPosture, List.of(player));
         updateEquipment(List.of(player));
-        updateHead(List.of(player));
+        sendHead(loc.getYaw(), List.of(player));
     }
 
-    private void updateHead(Collection<Player> to) {
-        PacketContainer packet1 = new PacketContainer(PacketType.Play.Server.ENTITY_HEAD_ROTATION);
-        setIdInPacket(packet1);
-        packet1.getBytes().write(0, (byte) (loc.getYaw() * 256f / 360f));
-        to.forEach(player -> protocol.sendServerPacket(player, packet1));
+    private void sendHead(float yaw, Collection<Player> to) {
+        PacketContainer head = new PacketContainer(PacketType.Play.Server.ENTITY_HEAD_ROTATION);
+        setIdInPacket(head);
+        head.getBytes().write(0, (byte) (yaw * 256f / 360f));
+        to.forEach(p -> protocol.sendServerPacket(p, head));
     }
 
     public void setPosture(Posture posture, Collection<Player> to) {
@@ -169,5 +167,14 @@ public class FakeLivingEntity extends FakeEntity {
             for (Posture posture : values()) if (posture.id == id) return posture;
             throw new IllegalArgumentException("Unknown posture: " + id);
         }
+    }
+
+    private void sendBodyLook(float yaw, float pitch, Collection<Player> to) {
+        PacketContainer body = new PacketContainer(PacketType.Play.Server.ENTITY_LOOK);
+        setIdInPacket(body);
+        body.getBytes().write(0, (byte) (yaw * 256f / 360f));
+        body.getBytes().write(1, (byte) (pitch * 256f / 360f));
+        body.getBooleans().write(0, true);
+        to.forEach(p -> protocol.sendServerPacket(p, body));
     }
 }

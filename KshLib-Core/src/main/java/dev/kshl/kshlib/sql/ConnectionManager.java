@@ -36,6 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -48,6 +50,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     @Getter
     private boolean ready;
     private boolean shuttingDown;
+    private final CompletableFuture<Void> readyCompletable = new CompletableFuture<>();
 
     public ConnectionManager(File sqliteFile) throws IOException, SQLException, ClassNotFoundException {
         this(sqliteFile, null, null, null, null, 0);
@@ -113,6 +116,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
             // impossible (ready not marked true until after this)
         }
         ready = true;
+        readyCompletable.complete(null);
         postInit();
     }
 
@@ -799,5 +803,9 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
             throw new IllegalArgumentException("Invalid table name: " + tableName + ", must match " + TABLE_NAME_REGEX);
         }
         return tableName;
+    }
+
+    public final CompletionStage<Void> whenInitialized() {
+        return readyCompletable.minimalCompletionStage();
     }
 }

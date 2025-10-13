@@ -8,6 +8,9 @@ import lombok.Getter;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public abstract class SettingManager<T> {
@@ -36,7 +39,7 @@ public abstract class SettingManager<T> {
 
         sql.executeTransaction(connection, () -> {
             boolean needsMigrated = sql.tableExists(connection, table) && !sql.columnExists(connection, table, "setting");
-            
+
             if (needsMigrated) {
                 sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
                 sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
@@ -109,6 +112,32 @@ public abstract class SettingManager<T> {
         }, 3000L, uid, setting);
         cache.put(key, val);
         return val;
+    }
+
+    public Map<Integer, T> getAll(int uid, List<Integer> settings) throws SQLException, BusyException {
+        return getAll(List.of(uid), settings).getOrDefault(uid, new HashMap<>());
+    }
+
+    public Map<Integer, Map<Integer, T>> getAll(List<Integer> uids, List<Integer> settings) throws SQLException, BusyException {
+        if (!initDone) throw new IllegalStateException("Initialization is not complete.");
+        settings.forEach(this::validateSettingID);
+        if (uids.isEmpty() || settings.isEmpty()) return new HashMap<>();
+
+        String uidString = uids.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElseThrow();
+        String settingString = settings.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElseThrow();
+
+        Map<Integer, Map<Integer, T>> map = new HashMap<>();
+        sql.query("SELECT value,setting,uid FROM " + table + " WHERE uid IN (" + uidString + ") AND setting IN (" + settingString + ")", rs -> {
+            while (rs.next()) {
+                map.computeIfAbsent(rs.getInt("uid"), k -> new HashMap<>()).put(rs.getInt("setting"), retrievalFunction.apply(rs));
+            }
+        }, 3000L);
+        for (Integer uid : uids) {
+            for (Integer setting : settings) {
+                map.computeIfAbsent(uid, k -> new HashMap<>()).putIfAbsent(setting, def);
+            }
+        }
+        return map;
     }
 
     public void clearCache() {

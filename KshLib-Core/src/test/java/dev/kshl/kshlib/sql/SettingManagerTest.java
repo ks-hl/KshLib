@@ -4,6 +4,8 @@ package dev.kshl.kshlib.sql;
 import dev.kshl.kshlib.exceptions.BusyException;
 
 import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -63,6 +65,24 @@ public class SettingManagerTest {
         assertEquals(1, settingManager.get(2, 1));
 
         assertThrows(IllegalArgumentException.class, () -> settingManager.set(1, 0, 0));
+
+        var all = settingManager.getAll(List.of(1, 2, 3), List.of(1, 2));
+        System.out.println(all);
+
+        assertEquals(3, all.size());
+        assertTrue(all.containsKey(1));
+        assertTrue(all.containsKey(2));
+        assertTrue(all.containsKey(3));
+        for (Map<Integer, Integer> value : all.values()) {
+            assertEquals(2, value.size());
+            assertTrue(value.containsKey(1));
+            assertTrue(value.containsKey(2));
+        }
+
+        assertEquals(1, all.get(2).get(1));
+        assertEquals(4, all.get(2).get(2));
+
+        assertEquals(5, all.get(3).get(2));
     }
 
     @DatabaseTest

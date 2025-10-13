@@ -4,6 +4,7 @@ import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunction;
 import dev.kshl.kshlib.function.PreparedStatementFunction;
 import dev.kshl.kshlib.function.ThrowingConsumer;
+import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
@@ -12,8 +13,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -234,4 +237,12 @@ public class DatabaseManagerTest {
         assertThrows(ArrayIndexOutOfBoundsException.class, () -> sql.execute("SELECT 1 FROM " + table, 3000L, 1));
     }
 
+    @Test
+    public void testInitCompletable() throws SQLException, IOException, ClassNotFoundException {
+        AtomicBoolean touched = new AtomicBoolean(false);
+        try (TestConnectionManager sql = new TestConnectionManager(new File("/tmp/kshlib/" + UUID.randomUUID() + ".db"))) {
+            sql.whenInitialized().thenRun(() -> touched.set(true));
+        }
+        assertTrue(touched.get());
+    }
 }

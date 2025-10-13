@@ -10,6 +10,7 @@ import com.comphenix.protocol.events.PacketEvent;
 import com.comphenix.protocol.reflect.StructureModifier;
 import com.comphenix.protocol.wrappers.EnumWrappers;
 import com.comphenix.protocol.wrappers.WrappedDataValue;
+import dev.kshl.kshlib.spigot.protocollib.wrapper.EntityPosSync;
 import lombok.Getter;
 import org.bukkit.Location;
 import org.bukkit.entity.EntityType;
@@ -169,39 +170,55 @@ public abstract class FakeEntity {
         audience.remove(player.getUniqueId());
     }
 
-    public void move(Location loc, boolean onGround) {
+    public void move(Location loc) {
         loc = loc.clone();
-        sendToAll(getMoveOrTeleportPacket(loc, onGround));
+        sendToAll(getMoveOrTeleportPacket(loc));
 
         lastMoved = System.currentTimeMillis();
         this.loc = loc;
     }
 
-    protected PacketContainer getMoveOrTeleportPacket(Location loc, boolean onGround) {
+    public void teleport(Location loc) {
+        loc = loc.clone();
+        sendToAll(getTeleportPacket(loc));
+
+        lastMoved = System.currentTimeMillis();
+        this.loc = loc;
+    }
+
+    protected PacketContainer getMoveOrTeleportPacket(Location loc) {
         loc = loc.clone();
         // Move entity
 
         double distanceX = loc.getX() - this.loc.getX();
         double distanceY = loc.getY() - this.loc.getY();
         double distanceZ = loc.getZ() - this.loc.getZ();
-        boolean teleport = Math.abs(distanceX) > 7.9 || Math.abs(distanceY) > 7.9 || Math.abs(distanceZ) > 7.9;
-
-        PacketContainer packet = new PacketContainer(teleport ? PacketType.Play.Server.ENTITY_TELEPORT : PacketType.Play.Server.REL_ENTITY_MOVE_LOOK);
-        setIdInPacket(packet);
-        if (teleport) {
-            packet.getDoubles().write(0, loc.getX());
-            packet.getDoubles().write(1, loc.getY());
-            packet.getDoubles().write(2, loc.getZ());
-        } else {
-            packet.getShorts().write(0, (short) (distanceX * 4096));
-            packet.getShorts().write(1, (short) (distanceY * 4096));
-            packet.getShorts().write(2, (short) (distanceZ * 4096));
+        if (Math.abs(distanceX) > 7.9 || Math.abs(distanceY) > 7.9 || Math.abs(distanceZ) > 7.9) {
+            return getTeleportPacket(loc);
         }
-        packet.getBooleans().write(0, onGround);
+
+        PacketContainer packet = new PacketContainer(PacketType.Play.Server.REL_ENTITY_MOVE_LOOK);
+        setIdInPacket(packet);
+
+        packet.getShorts().write(0, (short) (distanceX * 4096));
+        packet.getShorts().write(1, (short) (distanceY * 4096));
+        packet.getShorts().write(2, (short) (distanceZ * 4096));
+
+        packet.getBooleans().write(0, true);
         packet.getBytes().write(0, (byte) (loc.getYaw() * 256f / 360f));
         packet.getBytes().write(1, (byte) (loc.getPitch() * 256f / 360f));
 
         return packet;
+    }
+
+    private PacketContainer getTeleportPacket(Location loc) {
+        try {
+            PacketContainer packetContainer = EntityPosSync.getTeleportPacket(loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch(), true);
+            setIdInPacket(packetContainer);
+            return packetContainer;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public UUID getUUID() {
