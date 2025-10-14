@@ -691,6 +691,20 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         return false;
     }
 
+    public boolean isWithoutRowID(String table, long waitMillis) throws SQLException, BusyException {
+        if (isMySQL()) throw new IllegalStateException("'WITHOUT ROWID' does not exist on MySQL");
+        return execute((ConnectionFunction<Boolean>) connection -> isWithoutRowID(connection, table), waitMillis);
+    }
+
+    public boolean isWithoutRowID(Connection connection, String table) throws SQLException {
+        if (isMySQL()) throw new IllegalStateException("'WITHOUT ROWID' does not exist on MySQL");
+        String ddl = query(connection, "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", rs -> {
+            if (!rs.next()) return null;
+            return rs.getString(1);
+        }, table);
+        return ddl != null && ddl.toUpperCase().contains("WITHOUT ROWID");
+    }
+
     /**
      * Starts the build process for a statement which provides a Connection and expects and return {@param T}
      */
