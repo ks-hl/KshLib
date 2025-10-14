@@ -698,11 +698,10 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
 
     public boolean isWithoutRowID(Connection connection, String table) throws SQLException {
         if (isMySQL()) throw new IllegalStateException("'WITHOUT ROWID' does not exist on MySQL");
-        String ddl = query(connection, "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", rs -> {
-            if (!rs.next()) return null;
-            return rs.getString(1);
+        return query(connection, "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", rs -> {
+            if (!rs.next()) throw new IllegalStateException("Table '" + table + "' does not exist");
+            return rs.getString(1).toUpperCase().contains("WITHOUT ROWID");
         }, table);
-        return ddl != null && ddl.toUpperCase().contains("WITHOUT ROWID");
     }
 
     /**
