@@ -130,8 +130,8 @@ public class YamlTest {
         yamlConfig.set("enum2", FakeEnum.ENUM2.toString().toLowerCase());
         reload();
         assertEquals("ENUM1", yamlConfig.getString("enum").orElseThrow());
-        assertEquals(FakeEnum.ENUM1, yamlConfig.getEnumResult("enum", FakeEnum::valueOf, FakeEnum.class.getName()).orElseThrow());
-        assertEquals(FakeEnum.ENUM2, yamlConfig.getEnumResult("enum2", FakeEnum::valueOf, FakeEnum.class.getName()).orElseThrow());
+        assertEquals(FakeEnum.ENUM1, yamlConfig.getEnumResult("enum", FakeEnum.class).orElseThrow());
+        assertEquals(FakeEnum.ENUM2, yamlConfig.getEnumResult("enum2", FakeEnum.class).orElseThrow());
     }
 
     @Test

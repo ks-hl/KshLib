@@ -7,7 +7,6 @@ import dev.kshl.kshlib.misc.BiDiMapCache;
 import dev.kshl.kshlib.misc.UUIDHelper;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -94,6 +93,10 @@ public abstract class SQLIDManager<V> {
         return sql.execute((ConnectionFunction<Optional<Integer>>) connection -> getIDOpt(connection, value, insert, requireNew), 10000L);
     }
 
+    public Optional<Integer> getIDOpt(Connection connection, V value, boolean insert) throws SQLException {
+        return getIDOpt(connection, value, insert, false);
+    }
+
     private Optional<Integer> getIDOpt(Connection connection, V value, boolean insert, boolean requireNew) throws SQLException {
         if (!initDone) throw new IllegalStateException("Initialization is not complete.");
         if (value == null || isInvalid(value)) return Optional.empty();
@@ -142,14 +145,6 @@ public abstract class SQLIDManager<V> {
         return getIDOpt(value, true, true).orElseThrow();
     }
 
-    /**
-     * @deprecated Use {@link #getIDOpt(Object, boolean, boolean)}
-     */
-    @Deprecated
-    public int getIDOrThrow(V value, boolean insert) throws SQLException, BusyException {
-        return getIDOpt(value, insert).orElseThrow(() -> new IllegalArgumentException("ID for '" + value + "' not found."));
-    }
-
     public V getNewUniqueID(Supplier<V> idCreator) throws SQLException, BusyException {
         for (int i = 0; i < 10000; i++) {
             V id = idCreator.get();
@@ -171,13 +166,11 @@ public abstract class SQLIDManager<V> {
         sql.execute("INSERT INTO " + table + " (id,value) VALUES (?,?)", 3000L, id, toDatabaseObject(value));
     }
 
-    @Nullable
-    @Deprecated
-    public V getValue(int id) throws SQLException, BusyException {
-        return getValueOpt(id).orElse(null);
+    public Optional<V> getValueOpt(int id) throws SQLException, BusyException {
+        return sql.execute((ConnectionFunction<Optional<V>>) connection -> getValueOpt(connection, id), 3000L);
     }
 
-    public Optional<V> getValueOpt(int id) throws SQLException, BusyException {
+    public Optional<V> getValueOpt(Connection connection, int id) throws SQLException {
         if (!initDone) throw new IllegalStateException("Initialization is not complete.");
         if (id <= 0) return Optional.empty();
         V cachedValue = cache.function(cache -> {
@@ -185,28 +178,29 @@ public abstract class SQLIDManager<V> {
             return null;
         });
         if (cachedValue != null) return Optional.of(cachedValue);
-        return sql.query("SELECT value FROM " + table + " WHERE id=?", rs -> {
+        return sql.query(connection, "SELECT value FROM " + table + " WHERE id=?", rs -> {
             if (!rs.next()) return Optional.empty();
 
             V value = getValue(rs, 1);
             cache(id, value);
             return Optional.ofNullable(value);
-        }, 30000L, id);
+        }, id);
     }
 
-    protected void cache(int id, V value) throws BusyException {
+    protected void cache(int id, V value) {
         if (id <= 0) return;
-        cache.consume(cache -> cache.put(id, value), 10000L);
-    }
-
-    @Nonnull
-    @Deprecated
-    public V getValueOrThrow(int id) throws SQLException, BusyException {
-        return getValueOpt(id).orElseThrow(() -> new IllegalArgumentException("Value not found for ID " + id));
+        try {
+            cache.consume(cache -> cache.put(id, value), 10000L);
+        } catch (BusyException ignored) {
+        }
     }
 
     public boolean remove(int id) throws SQLException, BusyException {
-        return sql.executeReturnRows("DELETE FROM " + table + " WHERE id=?", 10000L, id) > 0;
+        return sql.execute((ConnectionFunction<Boolean>) connection -> remove(connection, id), 3000L);
+    }
+
+    public boolean remove(Connection connection, int id) throws SQLException {
+        return sql.executeReturnRows(connection, "DELETE FROM " + table + " WHERE id=?", id) > 0;
     }
 
     public String getTableName() {

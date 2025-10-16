@@ -7,5 +7,5 @@ import java.sql.SQLException;
 
 @FunctionalInterface
 public interface PreparedStatementConsumer {
-    void consume(PreparedStatement preparedStatement) throws SQLException, BusyException;
+    void consume(PreparedStatement preparedStatement) throws SQLException;
 }

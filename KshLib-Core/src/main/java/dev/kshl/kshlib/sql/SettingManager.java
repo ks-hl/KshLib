@@ -1,6 +1,8 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionConsumer;
+import dev.kshl.kshlib.function.ConnectionFunction;
 import dev.kshl.kshlib.function.ResultSetFunction;
 import dev.kshl.kshlib.misc.MapCache;
 import dev.kshl.kshlib.misc.Pair;
@@ -70,23 +72,31 @@ public abstract class SettingManager<T> {
     }
 
     public void set(int uid, T value) throws SQLException, BusyException, IllegalArgumentException {
-        set(uid, 0, value);
+        sql.execute((ConnectionConsumer) connection -> set(connection, uid, value), 3000L);
     }
 
     public void set(int uid, int setting, T value) throws SQLException, BusyException, IllegalArgumentException {
+        sql.execute((ConnectionConsumer) connection -> set(connection, uid, setting, value), 3000L);
+    }
+
+    public void set(Connection connection, int uid, T value) throws SQLException, IllegalArgumentException {
+        set(connection, uid, 0, value);
+    }
+
+    public void set(Connection connection, int uid, int setting, T value) throws SQLException, IllegalArgumentException {
         if (!initDone) throw new IllegalStateException("Initialization is not complete.");
         validateSettingID(setting);
         validate(value);
 
         if (Objects.equals(value, def)) {
-            sql.execute("DELETE FROM " + table + " WHERE uid=? AND setting=?", 3000L, uid, setting);
+            sql.execute(connection, "DELETE FROM " + table + " WHERE uid=? AND setting=?", uid, setting);
         } else {
-            sql.executeTransaction(connection -> {
-                int updated = sql.executeReturnRows("UPDATE " + table + " SET value=? WHERE uid=? AND setting=?", 3000L, value, uid, setting);
+            sql.executeTransaction(connection, () -> {
+                int updated = sql.executeReturnRows(connection, "UPDATE " + table + " SET value=? WHERE uid=? AND setting=?", value, uid, setting);
                 if (updated > 0) return;
 
-                sql.execute("INSERT INTO " + table + " (uid,setting,value) VALUES (?,?,?)", 3000L, uid, setting, value);
-            }, 3000);
+                sql.execute(connection, "INSERT INTO " + table + " (uid,setting,value) VALUES (?,?,?)", uid, setting, value);
+            });
         }
         cache.put(new Pair<>(uid, setting), value);
     }
@@ -99,6 +109,10 @@ public abstract class SettingManager<T> {
     }
 
     public T get(int uid, int setting) throws SQLException, BusyException {
+        return sql.execute((ConnectionFunction<T>) connection -> get(connection, uid, setting), 3000L);
+    }
+
+    public T get(Connection connection, int uid, int setting) throws SQLException {
         if (!initDone) throw new IllegalStateException("Initialization is not complete.");
         validateSettingID(setting);
 
@@ -106,10 +120,10 @@ public abstract class SettingManager<T> {
         T val = cache.get(key);
         if (val != null) return val;
 
-        val = sql.query("SELECT value FROM " + table + " WHERE uid=? AND setting=?", rs -> {
+        val = sql.query(connection, "SELECT value FROM " + table + " WHERE uid=? AND setting=?", rs -> {
             if (!rs.next()) return def;
             return retrievalFunction.apply(rs);
-        }, 3000L, uid, setting);
+        }, uid, setting);
         cache.put(key, val);
         return val;
     }
@@ -214,8 +228,8 @@ public abstract class SettingManager<T> {
         public boolean toggle(int uid, int setting) throws SQLException, BusyException {
             // TODO do this in 1 statement possible?
             return sql.executeTransaction(connection -> {
-                boolean state = !get(uid, setting);
-                set(uid, setting, state);
+                boolean state = !get(connection, uid, setting);
+                set(connection, uid, setting, state);
                 return state;
             }, 3000L);
         }

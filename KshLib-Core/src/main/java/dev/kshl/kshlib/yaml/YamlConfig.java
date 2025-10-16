@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -138,6 +139,10 @@ public class YamlConfig {
 
     public YamlResult<Object> getResult(String key) {
         return get(key, o -> true, o -> o, "Object");
+    }
+
+    public Object getOrSet(String key, Object def) {
+        return getOrSet(key, s -> true, o -> o, def);
     }
 
     public Optional<String> getString(String key) {
@@ -272,12 +277,18 @@ public class YamlConfig {
         return out;
     }
 
-    public <E extends Enum<E>> Optional<E> getEnum(String key, Function<String, E> valueOf, String enumClassName) {
-        return getEnumResult(key, valueOf, enumClassName).value();
+    public <E extends Enum<E>> Optional<E> getEnum(String key, Class<E> enumClass) {
+        return getEnumResult(key, enumClass).value();
     }
 
-    public <E extends Enum<E>> YamlResult<E> getEnumResult(String key, Function<String, E> valueOf, String enumClassName) {
-        return get(key, o -> o instanceof String, o -> valueOf.apply(o.toString().toUpperCase()), "Enum " + enumClassName);
+    public <E extends Enum<E>> YamlResult<E> getEnumResult(String key, Class<E> enumClass) {
+        Objects.requireNonNull(enumClass, "enumClass");
+        return get(
+                key,
+                o -> o instanceof String,
+                o -> Enum.valueOf(enumClass, o.toString().trim().toUpperCase(Locale.ROOT)),
+                "Enum " + enumClass.getSimpleName()
+        );
     }
 
     public void set(String key, Object value) {

@@ -74,12 +74,7 @@ public class StatementBuilder<T> {
 
     public T executeQuery(Connection connection) throws SQLException {
         checkUsed();
-        try {
-            return connectionFunction.apply(connection);
-        } catch (BusyException e) {
-            // Not thrown
-            throw new RuntimeException(e);
-        }
+        return connectionFunction.apply(connection);
     }
 
     public T executeQuery(long waitMillis) throws SQLException, BusyException {

@@ -41,9 +41,13 @@ public class MySQLConnectionPoolTest {
 
         ConnectionConsumer test = connection -> {
             // Check that the same thread accessing twice get the same Connection.
-            connectionManager.execute(connection2 -> {
-                Assertions.assertEquals(connection, connection2);
-            }, 3000L);
+            try {
+                connectionManager.execute(connection2 -> {
+                    Assertions.assertEquals(connection, connection2);
+                }, 3000L);
+            } catch (BusyException e) {
+                throw new RuntimeException(e);
+            }
             Thread thread = new Thread(() -> {
                 // Check that 2 different threads accessing at the same time get 2 different Connections
                 try {
@@ -67,9 +71,13 @@ public class MySQLConnectionPoolTest {
 
         Assertions.assertThrows(RuntimeException.class, () -> {
             connectionManager.executeTransaction(c -> {
-                connectionManager.execute((ConnectionConsumer) c2 -> {
-                    throw new IllegalArgumentException();
-                }, 3000L);
+                try {
+                    connectionManager.execute((ConnectionConsumer) c2 -> {
+                        throw new IllegalArgumentException();
+                    }, 3000L);
+                } catch (BusyException e) {
+                    throw new RuntimeException(e);
+                }
             }, 3000L);
         });
     }

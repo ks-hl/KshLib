@@ -26,6 +26,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Savepoint;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -247,7 +248,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     /**
      * Same as {@link ConnectionManager#execute(ConnectionFunction, long)} with no return
      */
-    public final void executeTransaction(Connection connection, ThrowingRunnable<Exception> task) throws SQLException {
+    public final void executeTransaction(Connection connection, ThrowingRunnable<SQLException> task) throws SQLException {
         executeTransaction(connection, () -> {
             task.run();
             return null;
@@ -262,25 +263,72 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      * @return The value returned by the task
      * @throws SQLException For SQLException thrown by the task
      */
-    public final <T> T executeTransaction(Connection connection, ThrowingSupplier<T, Exception> task) throws SQLException {
-        connection.setAutoCommit(false);
+    public <T> T executeTransaction(Connection connection, ThrowingSupplier<T, SQLException> task) throws SQLException {
+        final boolean originalAutoCommit = connection.getAutoCommit();
+        Savepoint sp = null;
+        boolean beganTransaction = false;
+        Throwable throwable = null;
 
         try {
-            return task.get();
+            if (originalAutoCommit) {
+                connection.setAutoCommit(false);
+                beganTransaction = true;
+            } else {
+                // We're already inside a larger transaction: use a savepoint for isolation.
+                sp = connection.setSavepoint();
+            }
+
+            T result = task.get();
+
+            // Commit only if we began the transaction here, otherwise just release the savepoint.
+            try {
+                if (beganTransaction) {
+                    connection.commit();
+                } else if (sp != null) {
+                    connection.releaseSavepoint(sp);
+                }
+            } catch (SQLException e) {
+                safeRollback(connection, beganTransaction, sp, e);
+                throw e;
+            }
+
+            return result;
+
+        } catch (SQLException | RuntimeException e) {
+            throwable = e;
+            safeRollback(connection, beganTransaction, sp, e);
+            throw e;
         } catch (Throwable e) {
-            connection.rollback();
-            connection.setAutoCommit(true);
-            if (e instanceof SQLException sqlException) throw sqlException;
-            else if (e instanceof RuntimeException runtimeException) throw runtimeException;
-            else throw new RuntimeException(e);
+            throwable = e;
+            safeRollback(connection, beganTransaction, sp, e);
+            if (e instanceof Error error) throw error;
+            throw new RuntimeException(e);
         } finally {
-            if (!connection.getAutoCommit()) {
-                connection.commit();
-                connection.setAutoCommit(true);
+            if (beganTransaction) {
+                try {
+                    connection.setAutoCommit(true);
+                } catch (SQLException e) {
+                    if (throwable != null) {
+                        throwable.addSuppressed(e);
+                    } else {
+                        throw e;
+                    }
+                }
             }
         }
     }
 
+    private void safeRollback(Connection connection, boolean beganTransaction, Savepoint sp, Throwable cause) throws SQLException {
+        try {
+            if (beganTransaction) {
+                connection.rollback();
+            } else if (sp != null) {
+                connection.rollback(sp);
+            }
+        } catch (SQLException e) {
+            cause.addSuppressed(e);
+        }
+    }
 
     public final void execute(String stmt, long wait, Object... args) throws SQLException, BusyException {
         execute(stmt).args(args).executeQuery(wait);
@@ -383,7 +431,7 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }, wait);
     }
 
-    public final <T> Stream<T> queryAll(Connection connection, String statement, ResultSetFunction<T> resultSetFunction, Object... args) throws SQLException, BusyException {
+    public final <T> Stream<T> queryAll(Connection connection, String statement, ResultSetFunction<T> resultSetFunction, Object... args) throws SQLException {
         Stream.Builder<T> stream = Stream.builder();
         query(connection, statement, rs -> {
             while (rs.next()) {
