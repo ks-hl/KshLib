@@ -2,23 +2,30 @@ package dev.kshl.kshlib.yaml;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class YamlTest {
-    private static final File file = new File("test/test.yml");
+    @TempDir
+    public Path tempPath;
     YamlConfig yamlConfig;
+    File file;
 
     @BeforeEach
     public void init() {
-        //noinspection ResultOfMethodCallIgnored
-        file.delete();
+        file = tempPath.resolve("test.yaml").toFile();
+        assertFalse(file.exists());
         yamlConfig = new YamlConfig(file, null);
         yamlConfig.initializeDataMap();
     }
@@ -152,5 +159,15 @@ public class YamlTest {
         } catch (IllegalArgumentException e) {
             assertEquals("'hi.hi' is wrong type. Expected 'Integer', is 'java.lang.String'", e.getMessage());
         }
+    }
+
+    @Test
+    public void testUUID() {
+        UUID uuid = UUID.randomUUID();
+        yamlConfig.set("uuid", uuid);
+        assertEquals(uuid, yamlConfig.getUUID("uuid").orElseThrow());
+
+        yamlConfig.set("not_uuid", "not a uuid");
+        assertTrue(yamlConfig.getUUID("not_uuid").isEmpty());
     }
 }

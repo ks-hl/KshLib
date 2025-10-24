@@ -1,8 +1,9 @@
 package dev.kshl.kshlib.parsing;
 
 import java.util.Optional;
+import java.util.UUID;
 
-public class NumberUtil {
+public class ParserUtil {
     public static Optional<Integer> tryParseInt(String s) {
         try {
             return Optional.of(Integer.parseInt(s));
@@ -31,6 +32,14 @@ public class NumberUtil {
         try {
             return Optional.of(Float.parseFloat(s));
         } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
+    public static Optional<UUID> tryParseUUID(String s) {
+        try {
+            return Optional.of(UUID.fromString(s));
+        } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
     }

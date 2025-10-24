@@ -1,5 +1,6 @@
 package dev.kshl.kshlib.yaml;
 
+import dev.kshl.kshlib.parsing.ParserUtil;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -8,6 +9,7 @@ import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 import org.yaml.snakeyaml.resolver.Resolver;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileInputStream;
@@ -27,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -119,12 +122,13 @@ public class YamlConfig {
     }
 
     public void save() throws IOException {
+        Objects.requireNonNull(file, "No file to save to");
         saveCopyTo(file);
         unsavedChanges = false;
     }
 
-    public void saveCopyTo(File file) throws IOException {
-        Objects.requireNonNull(file, "No file to save to");
+    public void saveCopyTo(@Nonnull File file) throws IOException {
+        Objects.requireNonNull(file, "File must be non-null");
         final DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         options.setPrettyFlow(true);
@@ -291,6 +295,14 @@ public class YamlConfig {
         );
     }
 
+    public Optional<UUID> getUUID(String key) {
+        return getUUIDResult(key).value();
+    }
+
+    public YamlResult<UUID> getUUIDResult(String key) {
+        return getStringResult(key).flatMap(ParserUtil::tryParseUUID, "UUID");
+    }
+
     public void set(String key, Object value) {
         checkKey(key);
 
@@ -314,7 +326,7 @@ public class YamlConfig {
                 return;
             }
         }
-        if (value instanceof Enum<?>) {
+        if (value instanceof Enum<?> || value instanceof UUID) {
             set(key, String.valueOf(value));
             return;
         }

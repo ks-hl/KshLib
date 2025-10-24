@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.yaml;
 
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public record YamlResult<E>(String key, Optional<E> value, Optional<Object> rawValue, String expectedType) {
@@ -58,5 +59,12 @@ public record YamlResult<E>(String key, Optional<E> value, Optional<Object> rawV
 
     public E orElseGet(Supplier<E> supplier) {
         return value.orElseGet(supplier);
+    }
+
+    public <T> YamlResult<T> map(Function<E, T> mapper, String expectedType) {
+        return new YamlResult<>(key(), value().map(mapper), rawValue(), expectedType);
+    }
+    public <T> YamlResult<T> flatMap(Function<E, Optional<T>> mapper, String expectedType) {
+        return new YamlResult<>(key(), value().flatMap(mapper), rawValue(), expectedType);
     }
 }
