@@ -1,6 +1,5 @@
 package dev.kshl.kshlib.sql;
 
-import dev.kshl.kshlib.concurrent.ConcurrentReference;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunction;
 import dev.kshl.kshlib.misc.BiDiMapCache;
@@ -19,7 +18,7 @@ import java.util.function.Supplier;
 public abstract class SQLIDManager<V> {
     private final ConnectionManager sql;
     private final String table;
-    private final ConcurrentReference<BiDiMapCache<Integer, V>> cache = new ConcurrentReference<>(new BiDiMapCache<>(15, TimeUnit.MINUTES));
+    private final BiDiMapCache<Integer, V> cache = new BiDiMapCache<>(1, TimeUnit.HOURS);
     private final String datatype;
     private boolean initDone;
 
@@ -103,7 +102,7 @@ public abstract class SQLIDManager<V> {
         if (value == null || isInvalid(value)) return Optional.empty();
 
         if (!requireNew) {
-            Integer cachedValue = cache.function(cache -> cache.getAnyKey(value));
+            Integer cachedValue = cache.getAnyKey(value);
             if (cachedValue != null) return Optional.of(cachedValue);
         }
 
@@ -169,10 +168,7 @@ public abstract class SQLIDManager<V> {
     public Optional<V> getValueOpt(Connection connection, int id) throws SQLException {
         if (!initDone) throw new IllegalStateException("Initialization is not complete.");
         if (id <= 0) return Optional.empty();
-        V cachedValue = cache.function(cache -> {
-            if (cache.containsKey(id)) return cache.get(id);
-            return null;
-        });
+        V cachedValue = cache.get(id);
         if (cachedValue != null) return Optional.of(cachedValue);
         return sql.query(connection, "SELECT value FROM " + table + " WHERE id=?", rs -> {
             if (!rs.next()) return Optional.empty();
@@ -184,11 +180,7 @@ public abstract class SQLIDManager<V> {
     }
 
     protected void cache(int id, V value) {
-        if (id <= 0) return;
-        try {
-            cache.consume(cache -> cache.put(id, value), 10000L);
-        } catch (BusyException ignored) {
-        }
+        if (id > 0) cache.put(id, value);
     }
 
     public boolean remove(int id) throws SQLException, BusyException {
@@ -204,7 +196,7 @@ public abstract class SQLIDManager<V> {
     }
 
     public void clearCache() {
-        cache.consume(BiDiMapCache::clear);
+        cache.clear();
     }
 
     protected abstract V getValue(ResultSet rs, int index) throws SQLException;

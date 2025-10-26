@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -38,12 +39,21 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     private final ScheduledFuture<?> cleanupFuture;
 
     public MapCache(long timeToLive, TimeUnit timeUnit) {
+        if (timeToLive <= 0) throw new IllegalArgumentException("timeToLive must be greater than 0");
+        Objects.requireNonNull(timeUnit, "timeUnit must not be null");
+
+        this.timeToLive = timeUnit.toMillis(timeToLive);
+        if (this.timeToLive > TimeUnit.DAYS.toMillis(7)) throw new IllegalArgumentException("timeToLive must be less than 1 week");
+        long interval = timeUnit.toNanos(timeToLive) / 10;
+        cleanupFuture = executor.scheduleAtFixedRate(this::cleanup, interval, interval, TimeUnit.NANOSECONDS);
+
         var rw = new ReentrantReadWriteLock();
         r = rw.readLock();
         w = rw.writeLock();
+    }
 
-        this.timeToLive = timeUnit.toMillis(timeToLive);
-        cleanupFuture = executor.scheduleAtFixedRate(this::cleanup, timeToLive / 10, timeToLive / 10, TimeUnit.MILLISECONDS);
+    public MapCache(long timeToLiveMillis) {
+        this(timeToLiveMillis, TimeUnit.MILLISECONDS);
     }
 
     @Override

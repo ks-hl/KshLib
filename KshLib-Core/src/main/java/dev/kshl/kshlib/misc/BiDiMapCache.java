@@ -1,7 +1,5 @@
 package dev.kshl.kshlib.misc;
 
-import java.sql.Time;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -13,6 +11,10 @@ public class BiDiMapCache<K, V> extends MapCache<K, V> {
 
     public BiDiMapCache(long timeToLive, TimeUnit timeUnit) {
         super(timeToLive, timeUnit);
+    }
+
+    public BiDiMapCache(long timeToLiveMillis) {
+        super(timeToLiveMillis);
     }
 
     @Override
