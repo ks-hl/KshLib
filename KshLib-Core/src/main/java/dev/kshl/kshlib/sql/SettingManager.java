@@ -14,11 +14,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 public abstract class SettingManager<T> {
     final ConnectionManager sql;
     private final String table;
-    final MapCache<Pair<Integer, Integer>, T> cache = new MapCache<>(3600000L, 3600000L, true);
+    final MapCache<Pair<Integer, Integer>, T> cache = new MapCache<>(1, TimeUnit.HOURS);
     private final T def;
     private final String sqlType;
     private final ResultSetFunction<T> retrievalFunction;
@@ -91,12 +92,14 @@ public abstract class SettingManager<T> {
         if (Objects.equals(value, def)) {
             sql.execute(connection, "DELETE FROM " + table + " WHERE uid=? AND setting=?", uid, setting);
         } else {
-            sql.executeTransaction(connection, () -> {
-                int updated = sql.executeReturnRows(connection, "UPDATE " + table + " SET value=? WHERE uid=? AND setting=?", value, uid, setting);
-                if (updated > 0) return;
+            String statement = "INSERT INTO " + table + " (uid, setting, value) VALUES (?,?,?) ";
 
-                sql.execute(connection, "INSERT INTO " + table + " (uid,setting,value) VALUES (?,?,?)", uid, setting, value);
-            });
+            if (sql.isMySQL()) {
+                statement += "ON DUPLICATE KEY UPDATE value = VALUE(value)";
+            } else {
+                statement += "ON CONFLICT(uid, setting) DO UPDATE SET value = excluded.value";
+            }
+            sql.execute(connection, statement, uid, setting, value);
         }
         cache.put(new Pair<>(uid, setting), value);
     }

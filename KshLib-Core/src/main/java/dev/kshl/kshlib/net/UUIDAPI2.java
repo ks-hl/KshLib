@@ -10,10 +10,11 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 public class UUIDAPI2 {
     public static final String BEDROCK_PREFIX = ".";
-    private final BiDiMapCache<String, UUID> cache = new BiDiMapCache<>(3600000L, 3600000L, true);
+    private final BiDiMapCache<String, UUID> cache = new BiDiMapCache<>(1, TimeUnit.HOURS);
 
     private static final MojangNetSessionAPI instanceMojangNetSessionAPI = new MojangNetSessionAPI();
     private static final GeyserMCAPI instanceGeyserMCAPI = new GeyserMCAPI();
@@ -21,27 +22,27 @@ public class UUIDAPI2 {
 
     @Nullable
     public UUID getUUIDFromUsername(String username) throws IOException, BusyException {
-        return Optional.ofNullable(getUUIDAndNameFromUsername(username)).map(Pair::getValue).orElseThrow();
+        return Optional.ofNullable(getUUIDAndNameFromUsername(username)).map(Pair::getRight).orElseThrow();
     }
 
     @Nullable
     public NameUUID getUUIDAndNameFromUsername(String username) throws IOException, BusyException {
         UUID out = cache.get(username);
-        if (out != null) return new NameUUID(cache.getKey(out), out);
+        if (out != null) return new NameUUID(cache.getAnyKey(out), out);
         NameUUID nameUUID;
         if (username.startsWith(BEDROCK_PREFIX)) {
             nameUUID = instanceGeyserMCAPI.getFloodgateUIDFromGamerTag(username);
         } else {
             nameUUID = instanceMojangNetAPI.getJavaUUIDFromUsername(username);
         }
-        if (nameUUID == null || nameUUID.getValue() == null) return null;
-        cache.put(nameUUID.getKey(), nameUUID.getValue());
+        if (nameUUID == null || nameUUID.getRight() == null) return null;
+        cache.put(nameUUID.getLeft(), nameUUID.getRight());
         return nameUUID;
     }
 
     @Nullable
     public String getUsernameFromUUID(UUID uuid) throws IOException, BusyException {
-        String name = cache.getKey(uuid);
+        String name = cache.getAnyKey(uuid);
         if (name != null) return name;
         if (uuid.getMostSignificantBits() == 0) {
             name = instanceGeyserMCAPI.getGamerTagFromFloodgateUID(uuid);

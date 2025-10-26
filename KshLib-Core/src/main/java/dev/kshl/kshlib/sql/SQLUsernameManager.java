@@ -12,14 +12,15 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 public class SQLUsernameManager implements ISQLManager {
 
     private final ConnectionManager sql;
     private final String table;
-    private final MapCache<Integer, String> cacheUIDToUsername = new MapCache<>(3600000L, 30000L, true);
-    private final MapCache<String, Integer> cacheUsernameToUID = new MapCache<>(3600000L, 30000L, true);
+    private final MapCache<Integer, String> cacheUIDToUsername = new MapCache<>(1, TimeUnit.HOURS);
+    private final MapCache<String, Integer> cacheUsernameToUID = new MapCache<>(1, TimeUnit.HOURS);
     private final TreeSetString recentUsernames = new TreeSetString.CaseInsensitive();
     private boolean recentUsernamesInitialized;
 

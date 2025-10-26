@@ -13,12 +13,13 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 public abstract class SQLIDManager<V> {
     private final ConnectionManager sql;
     private final String table;
-    private final ConcurrentReference<BiDiMapCache<Integer, V>> cache = new ConcurrentReference<>(new BiDiMapCache<>(300000L, 300000L, true));
+    private final ConcurrentReference<BiDiMapCache<Integer, V>> cache = new ConcurrentReference<>(new BiDiMapCache<>(15, TimeUnit.MINUTES));
     private final String datatype;
     private boolean initDone;
 
@@ -102,12 +103,7 @@ public abstract class SQLIDManager<V> {
         if (value == null || isInvalid(value)) return Optional.empty();
 
         if (!requireNew) {
-            Integer cachedValue = cache.function(cache -> {
-                if (cache.containsValue(value)) {
-                    return cache.getKey(value);
-                }
-                return null;
-            });
+            Integer cachedValue = cache.function(cache -> cache.getAnyKey(value));
             if (cachedValue != null) return Optional.of(cachedValue);
         }
 

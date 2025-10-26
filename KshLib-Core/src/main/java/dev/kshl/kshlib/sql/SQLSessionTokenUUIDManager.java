@@ -30,7 +30,7 @@ public class SQLSessionTokenUUIDManager {
 
     private final ConnectionManager connectionManager;
     private final String table;
-    private final MapCache<UUID, SessionCache> tokens = new MapCache<>(60000L, 10000L, true);
+    private final MapCache<UUID, SessionCache> tokens = new MapCache<>(1, TimeUnit.MINUTES);
     @Getter
     private final long sessionDuration;
     private final boolean ipSticky;

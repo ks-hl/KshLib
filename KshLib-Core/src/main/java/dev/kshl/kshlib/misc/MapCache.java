@@ -2,151 +2,266 @@ package dev.kshl.kshlib.misc;
 
 import javax.annotation.Nonnull;
 import javax.annotation.OverridingMethodsMustInvokeSuper;
+import java.util.AbstractMap;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 
-public class MapCache<K, V> extends HashMap<K, V> {
-    private static final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+public class MapCache<K, V> extends AbstractMap<K, V> {
+    private static final AtomicInteger cleanupThreadId = new AtomicInteger(0);
+    private static final ScheduledExecutorService executor = Executors.newScheduledThreadPool(3, r -> {
+        Thread t = new Thread(r, "KshLib-MapCache-Cleaner-" + cleanupThreadId.getAndIncrement());
+        t.setDaemon(true);
+        return t;
+    });
 
     protected final long timeToLive;
-    protected final long cleanupInterval;
-    protected final boolean updateWhenAccessed;
-    private final HashMap<K, V> forward = new HashMap<>();
-    private final ArrayDeque<Pair<Object, Long>> timeAddedQueue = new ArrayDeque<>();
-    private final Map<Object, Long> trueTimeAdded = new HashMap<>();
+    final HashMap<K, V> forward = new HashMap<>();
 
-    public MapCache(long timeToLive, long cleanupInterval, boolean updateWhenAccessed) {
-        this.timeToLive = timeToLive;
-        this.cleanupInterval = cleanupInterval;
-        this.updateWhenAccessed = updateWhenAccessed;
-        executor.scheduleAtFixedRate(this::cleanup, cleanupInterval, cleanupInterval, TimeUnit.MILLISECONDS);
+    private final ArrayDeque<Pair<Object, Long>> timeAddedQueue = new ArrayDeque<>();
+    private final Map<Object, Long> lastTouch = new ConcurrentHashMap<>();
+
+    final ReentrantReadWriteLock.ReadLock r;
+    final ReentrantReadWriteLock.WriteLock w;
+
+    private final ScheduledFuture<?> cleanupFuture;
+
+    public MapCache(long timeToLive, TimeUnit timeUnit) {
+        var rw = new ReentrantReadWriteLock();
+        r = rw.readLock();
+        w = rw.writeLock();
+
+        this.timeToLive = timeUnit.toMillis(timeToLive);
+        cleanupFuture = executor.scheduleAtFixedRate(this::cleanup, timeToLive / 10, timeToLive / 10, TimeUnit.MILLISECONDS);
     }
 
     @Override
     @OverridingMethodsMustInvokeSuper
-    public void clear() {
-        forward.clear();
-        timeAddedQueue.clear();
-        trueTimeAdded.clear();
+    public final void clear() {
+        w.lock();
+        try {
+            forward.clear();
+            timeAddedQueue.clear();
+            lastTouch.clear();
+            doClear();
+        } finally {
+            w.unlock();
+        }
+    }
+
+    protected void doClear() {
     }
 
     @Nonnull
     @Override
     public final Set<K> keySet() {
-        cleanup();
-        return forward.keySet();
+        r.lock();
+        try {
+            return Set.copyOf(forward.keySet());
+        } finally {
+            r.unlock();
+        }
     }
 
     @Override
     public final int size() {
-        cleanup();
-        return forward.size();
+        r.lock();
+        try {
+            return forward.size();
+        } finally {
+            r.unlock();
+        }
     }
 
     @Override
     public final boolean containsKey(Object key) {
-        cleanup();
-        return forward.containsKey(key);
+        r.lock();
+        try {
+            return forward.containsKey(key);
+        } finally {
+            r.unlock();
+        }
     }
 
     @Override
     public boolean containsValue(Object value) {
-        cleanup();
-        return forward.containsValue(value);
+        r.lock();
+        try {
+            return forward.containsValue(value);
+        } finally {
+            r.unlock();
+        }
     }
 
     @Override
     public final V get(Object key) {
-        V value = forward.get(key);
-        cleanup();
-        if (value == null) {
-            return null;
-        }
+        r.lock();
+        V value = null;
+        try {
+            return value = forward.get(key);
+        } finally {
+            r.unlock();
 
-        if (updateWhenAccessed) {
-            touch(key);
+            if (value != null) {
+                w.lock();
+                try {
+                    //noinspection SuspiciousMethodCalls
+                    if (forward.containsKey(key)) {
+                        touchUnderWriteLock(key);
+                    }
+                } finally {
+                    w.unlock();
+                }
+            }
         }
-        return value;
     }
 
-    protected final void touch(Object key) {
+    protected boolean needTouch(Object key) {
+        return System.currentTimeMillis() - lastTouch.getOrDefault(key, 0L) > 1000;
+    }
+
+    protected final void touchUnderWriteLock(Object key) {
         long expiration = System.currentTimeMillis() + timeToLive;
         timeAddedQueue.add(new Pair<>(key, expiration));
-        trueTimeAdded.put(key, expiration);
+        lastTouch.put(key, System.currentTimeMillis());
     }
 
     @Override
-    @OverridingMethodsMustInvokeSuper
-    public V put(K key, V value) {
-        touch(key);
-        return forward.put(key, value);
+    public final V put(K key, V value) {
+        w.lock();
+        try {
+            touchUnderWriteLock(key);
+            var oldValue = forward.put(key, value);
+            doPut(key, value, oldValue);
+            return oldValue;
+        } finally {
+            w.unlock();
+        }
     }
+
+    protected void doPut(K key, V value, V oldValue) {
+    }
+
 
     @Override
     @OverridingMethodsMustInvokeSuper
     public V remove(Object key) {
-        trueTimeAdded.remove(key);
-        return forward.remove(key);
+        w.lock();
+        try {
+            lastTouch.remove(key);
+            V v = forward.remove(key);
+            doRemove(key, v);
+            return v;
+        } finally {
+            w.unlock();
+        }
+    }
+
+    protected void doRemove(Object key, V value) {
     }
 
     @Override
     @OverridingMethodsMustInvokeSuper
     public void putAll(@Nonnull Map<? extends K, ? extends V> m) {
-        for (Entry<? extends K, ? extends V> entry : m.entrySet()) {
-            put(entry.getKey(), entry.getValue());
+        w.lock();
+        try {
+            for (Entry<? extends K, ? extends V> entry : m.entrySet()) {
+                put(entry.getKey(), entry.getValue());
+            }
+        } finally {
+            w.unlock();
         }
     }
 
     @Override
     public final V computeIfAbsent(K key, @Nonnull Function<? super K, ? extends V> mappingFunction) {
-        V val = get(key);
-        if (val != null) return val;
-        V newVal = mappingFunction.apply(key);
-        put(key, newVal);
-        return newVal;
+        r.lock();
+        try {
+            if (forward.containsKey(key)) return forward.get(key);
+        } finally {
+            r.unlock();
+        }
+        w.lock();
+        try {
+            if (forward.containsKey(key)) return forward.get(key);
+
+            V newVal = mappingFunction.apply(key);
+            if (newVal == null) return null;
+            put(key, newVal);
+            return newVal;
+        } finally {
+            w.unlock();
+        }
     }
 
     @Override
     public final @Nonnull Set<Entry<K, V>> entrySet() {
-        cleanup();
-        return forward.entrySet();
+        r.lock();
+        try {
+            return Map.copyOf(forward).entrySet();
+        } finally {
+            r.unlock();
+        }
     }
 
     @Override
     public final @Nonnull Collection<V> values() {
-        cleanup();
-        return forward.values();
+        r.lock();
+        try {
+            return List.copyOf(forward.values());
+        } finally {
+            r.unlock();
+        }
     }
 
     @OverridingMethodsMustInvokeSuper
-    protected List<V> cleanup() {
-        final long currentTime = System.currentTimeMillis();
-        List<V> removed = new ArrayList<>();
+    protected final void cleanup() {
+        w.lock();
+        try {
+            final long currentTime = System.currentTimeMillis();
+            Map<Object, V> removed = new HashMap<>();
 
-        Pair<Object, Long> element;
-        while ((element = timeAddedQueue.peek()) != null) {
-            if (currentTime >= element.getRight()) timeAddedQueue.poll();
-            else break;
-            Long trueExpiration = trueTimeAdded.get(element.getLeft());
-            if (trueExpiration != null && currentTime >= trueExpiration) {
-                removed.add(remove(element.getLeft()));
+            Pair<Object, Long> element;
+            while ((element = timeAddedQueue.peek()) != null) {
+                if (currentTime < element.getRight()) break;
+
+                timeAddedQueue.poll();
+
+                if (currentTime >= lastTouch.getOrDefault(element.getLeft(), 0L) + timeToLive) {
+                    removed.put(element.getLeft(), remove(element.getLeft()));
+                }
             }
+            doCleanUp(removed);
+        } finally {
+            w.unlock();
         }
-        return removed;
+    }
+
+    protected void doCleanUp(Map<Object, V> removed) {
     }
 
     @Override
     public final boolean isEmpty() {
-        cleanup();
-        return forward.isEmpty();
+        r.lock();
+        try {
+            return forward.isEmpty();
+        } finally {
+            r.unlock();
+        }
+    }
+
+    public void shutdown() {
+        cleanupFuture.cancel(false);
     }
 }

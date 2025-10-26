@@ -7,12 +7,12 @@ import dev.kshl.kshlib.misc.MapCache;
 import lombok.Getter;
 
 import javax.annotation.Nullable;
-
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Deprecated
@@ -22,7 +22,7 @@ public class SQLSessionTokenManager {
     private static final int HASH_KEY_BYTES = 32;
     private final ConnectionManager connectionManager;
     private final String table;
-    private final MapCache<Integer, SessionToken> tokens = new MapCache<>(60000L, 10000L, true);
+    private final MapCache<Integer, SessionToken> tokens = new MapCache<>(1, TimeUnit.MINUTES);
     @Getter
     private final long sessionDuration;
     private final boolean ipSticky;

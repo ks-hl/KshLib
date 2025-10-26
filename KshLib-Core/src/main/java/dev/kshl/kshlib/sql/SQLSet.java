@@ -12,6 +12,7 @@ import java.sql.SQLException;
 import java.util.Collection;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.concurrent.TimeUnit;
 
 public abstract class SQLSet<T> {
     private final ConnectionManager connectionManager;
@@ -23,7 +24,7 @@ public abstract class SQLSet<T> {
         this.connectionManager = connectionManager;
         this.table = ConnectionManager.validateTableName(table);
         this.type = type;
-        this.cache = cache ? new MapCache<>(3600000L, 3600000L, true) : null;
+        this.cache = cache ? new MapCache<>(1, TimeUnit.HOURS) : null;
     }
 
     public void init(Connection connection) throws SQLException {
