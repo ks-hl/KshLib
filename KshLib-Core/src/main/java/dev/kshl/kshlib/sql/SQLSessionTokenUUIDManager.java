@@ -35,7 +35,6 @@ public class SQLSessionTokenUUIDManager {
     private final long sessionDuration;
     private final boolean ipSticky;
     private boolean initialized;
-    private long lastPurgedExpiredTokens;
 
     public SQLSessionTokenUUIDManager(ConnectionManager connectionManager, String table, long sessionDuration, boolean ipSticky) {
         this.connectionManager = connectionManager;
@@ -92,9 +91,7 @@ public class SQLSessionTokenUUIDManager {
                 continue;
             }
             var token = new SessionToken(uid, id, expires, ip, secret);
-            synchronized (tokens) {
-                tokens.put(id, token.toCache());
-            }
+            tokens.put(id, token.toCache());
             return token;
         }
         throw new IllegalStateException("Failed to generate token after 10000 attempts. Buy a lottery ticket.");
@@ -127,15 +124,11 @@ public class SQLSessionTokenUUIDManager {
         if (ipSticky && ip == null) throw new IllegalArgumentException("IP can not be null if ipSticky");
         if (!ipSticky && ip != null) throw new IllegalArgumentException("IP can not be provided if not ipSticky");
 
-        SessionCache cached;
-        synchronized (tokens) {
-            cached = tokens.get(token_id);
-        }
+        SessionCache cached = tokens.get(token_id);
         if (cached != null) {
-            if (System.currentTimeMillis() >= cached.expires()) {
-                synchronized (tokens) {
-                    tokens.remove(token_id);
-                }
+            long time = System.currentTimeMillis();
+            if (time >= cached.expires()) {
+                tokens.remove(token_id);
                 return Optional.empty();
             }
             if (test(cached.hash(), token) && (!ipSticky || ip.equals(cached.ip()))) {
@@ -155,12 +148,14 @@ public class SQLSessionTokenUUIDManager {
             return new SessionCache(uid, token_id, expires, ipSticky ? ip : null, hash);
         }, 10000L, token_id.toString(), System.currentTimeMillis());
 
-        if (sessionCache == null || sessionCache.hash() == null) return Optional.empty();
-
-        if (!test(sessionCache.hash(), token)) return Optional.empty();
-        synchronized (tokens) {
-            tokens.put(token_id, sessionCache);
+        if (sessionCache == null || sessionCache.hash() == null) {
+            return Optional.empty();
         }
+
+        if (!test(sessionCache.hash(), token)) {
+            return Optional.empty();
+        }
+        tokens.put(token_id, sessionCache);
         return Optional.of(sessionCache.uid());
     }
 
@@ -184,9 +179,7 @@ public class SQLSessionTokenUUIDManager {
             connectionManager.execute("DELETE FROM " + table + " WHERE expires<?", 500L, time);
         } catch (SQLException | BusyException ignored) {
         }
-        synchronized (tokens) {
-            tokens.values().removeIf(token -> token.expires() < time);
-        }
+        tokens.values().removeIf(token -> token.expires() < time);
     }
 
     public static Pair<UUID, String> parseToken(String combined) throws IllegalArgumentException {
@@ -227,15 +220,11 @@ public class SQLSessionTokenUUIDManager {
             }, uid);
             connectionManager.execute(connection, "DELETE FROM " + table + " WHERE uid=?", uid);
         }, 3000L);
-        synchronized (tokens) {
-            toRemove.forEach(tokens::remove);
-        }
+        toRemove.forEach(tokens::remove);
     }
 
     public void remove(int uid, UUID token_id) throws SQLException, BusyException {
         connectionManager.executeReturnRows("DELETE FROM " + table + " WHERE uid=? AND token_id=?", 10000L, uid, token_id.toString());
-        synchronized (tokens) {
-            tokens.remove(token_id);
-        }
+        tokens.remove(token_id);
     }
 }

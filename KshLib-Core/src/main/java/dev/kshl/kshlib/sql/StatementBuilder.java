@@ -30,6 +30,7 @@ public class StatementBuilder<T> {
     private Object[] args;
     @Getter
     private boolean used;
+    private final boolean readOnly;
 
     StatementBuilder(ConnectionManager connectionManager, ConnectionFunction<T> connectionFunction) {
         this(FunctionType.CONNECTION, connectionManager, null, connectionFunction, null, null);
@@ -62,6 +63,7 @@ public class StatementBuilder<T> {
             connectionFunction = adaptToConnection(statement, preparedStatementFunction);
         }
         this.connectionFunction = connectionFunction;
+        this.readOnly = statement != null && statement.trim().toLowerCase().startsWith("select ");
     }
 
     public StatementBuilder<T> args(Object... args) {
@@ -79,7 +81,7 @@ public class StatementBuilder<T> {
 
     public T executeQuery(long waitMillis) throws SQLException, BusyException {
         checkUsed();
-        return connectionManager.execute(connectionFunction, waitMillis);
+        return connectionManager.execute(connectionFunction, waitMillis, readOnly);
     }
 
     public int executeReturnGenerated(Connection connection) throws SQLException {
@@ -137,7 +139,7 @@ public class StatementBuilder<T> {
 
     private ConnectionFunction<T> adaptToConnection(String statement, PreparedStatementFunction<T> preparedStatementFunction) {
         return connection -> {
-            connectionManager.debugSQLStatement(statement, args);
+            connectionManager.debugSQLStatement((readOnly ? "[READONLY] " : "") + statement, args);
             PreparedStatement preparedStatement;
             if (action == Action.GENERATED) {
                 preparedStatement = connection.prepareStatement(statement, PreparedStatement.RETURN_GENERATED_KEYS);

@@ -39,7 +39,7 @@ public abstract class ConnectionPool {
 
     public final <T> T function(ConnectionFunction<T> connectionFunction, long wait) throws SQLException, BusyException {
         try {
-            return executeWithException(connectionFunction::apply, wait);
+            return executeWithException(connectionFunction::apply, wait, false);
         } catch (SQLException | BusyException e) {
             throw e;
         } catch (Exception e) {
@@ -47,9 +47,9 @@ public abstract class ConnectionPool {
         }
     }
 
-    protected abstract <T> T executeWithException_(ConnectionFunctionWithException<T> task, long wait) throws Exception;
+    protected abstract <T> T executeWithException_(ConnectionFunctionWithException<T> task, long wait, boolean readOnly) throws Exception;
 
-    public <T> T executeWithException(ConnectionFunctionWithException<T> task, long wait) throws Exception {
+    public <T> T executeWithException(ConnectionFunctionWithException<T> task, long wait, boolean readOnly) throws Exception {
         return executeWithException_(connection -> {
             long start = nanoTime();
             synchronized (usage) {
@@ -64,7 +64,7 @@ public abstract class ConnectionPool {
                     usage.values().removeIf(p -> p != null && end - p > TimeUnit.MINUTES.toNanos(30));
                 }
             }
-        }, wait);
+        }, wait, readOnly);
     }
 
     /**

@@ -1,6 +1,5 @@
 package dev.kshl.kshlib.sql;
 
-import dev.kshl.kshlib.concurrent.ConcurrentReference;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunctionWithException;
 
@@ -10,9 +9,13 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class ConnectionPoolSQLite extends ConnectionPool {
-    private final ConcurrentReference<Connection> connection;
+    private final Connection connection;
+    private final ReentrantReadWriteLock.ReadLock r;
+    private final ReentrantReadWriteLock.WriteLock w;
 
     public ConnectionPoolSQLite(File file) throws IOException, SQLException, ClassNotFoundException {
         super();
@@ -29,21 +32,39 @@ public class ConnectionPoolSQLite extends ConnectionPool {
             }
         }
 
-        this.connection = new ConcurrentReference<>(DriverManager.getConnection("jdbc:sqlite:" + file.getAbsolutePath()));
+        this.connection = DriverManager.getConnection("jdbc:sqlite:" + file.getAbsolutePath());
+        var lock = new ReentrantReadWriteLock(true);
+        r = lock.readLock();
+        w = lock.writeLock();
     }
 
     @Override
-    protected <T> T executeWithException_(ConnectionFunctionWithException<T> connectionFunction, long wait) throws Exception {
+    public <T> T executeWithException_(ConnectionFunctionWithException<T> connectionFunction, long wait, boolean readOnly) throws Exception {
         if (isClosing()) {
             throw new BusyException("Database closing");
         }
-        return connection.functionThrowing(connection -> {
+        if (readOnly) {
+            if (!r.tryLock(wait, TimeUnit.MILLISECONDS)) {
+                throw new BusyException("Database busy");
+            }
+        } else {
+            if (!w.tryLock(wait, TimeUnit.MILLISECONDS)) {
+                throw new BusyException("Database busy");
+            }
+        }
+        try {
             var ret = connectionFunction.apply(connection);
-            if (this.connection.getHoldCount() == 1 && !connection.getAutoCommit()) {
+            if (w.getHoldCount() == 1 && !connection.getAutoCommit()) {
                 throw new IllegalStateException("Auto commit not re-enabled after transaction");
             }
             return ret;
-        }, wait);
+        } finally {
+            if (readOnly) {
+                r.unlock();
+            } else {
+                w.unlock();
+            }
+        }
     }
 
     @Override
@@ -58,12 +79,10 @@ public class ConnectionPoolSQLite extends ConnectionPool {
 
     @Override
     public void closeInternal() {
-        connection.consumeForce(connection1 -> {
-            try {
-                connection1.close();
-            } catch (SQLException ignored) {
-            }
-        });
+        try {
+            connection.close();
+        } catch (SQLException ignored) {
+        }
     }
 
     @Override

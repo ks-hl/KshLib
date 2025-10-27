@@ -50,7 +50,7 @@ public class BiDiMapCache<K, V> extends MapCache<K, V> {
             r.unlock();
         }
 
-        if (!keys.isEmpty()) {
+        if (keys.stream().anyMatch(this::needTouch)) {
             w.lock();
             try {
                 for (K key : keys) {

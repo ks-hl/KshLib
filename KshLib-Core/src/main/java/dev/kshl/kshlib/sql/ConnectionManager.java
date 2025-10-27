@@ -12,6 +12,7 @@ import dev.kshl.kshlib.function.ThrowingFunction;
 import dev.kshl.kshlib.function.ThrowingRunnable;
 import dev.kshl.kshlib.function.ThrowingSupplier;
 import dev.kshl.kshlib.llm.embed.AbstractEmbeddings;
+import lombok.AccessLevel;
 import lombok.Getter;
 
 import javax.annotation.CheckReturnValue;
@@ -45,6 +46,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public abstract class ConnectionManager implements Closeable, AutoCloseable {
+    @Getter(AccessLevel.PACKAGE)
     private final ConnectionPool connectionPool;
     @Getter
     private boolean closed;
@@ -145,19 +147,6 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     }
 
     /**
-     * Same as {@link ConnectionManager#execute(ConnectionFunction, long)} but with any Exception
-     *
-     * @throws Exception For Exception thrown by the task
-     */
-    public final <T> T executeWithException(ConnectionFunctionWithException<T> task, long wait) throws Exception {
-        if (closed) throw new IllegalStateException("closed");
-        if (!ready) throw new IllegalStateException("Not yet initialized");
-        checkAsync_();
-
-        return connectionPool.executeWithException(task, wait);
-    }
-
-    /**
      * @see PreparedStatement#executeUpdate()
      */
     @SuppressWarnings("unused")
@@ -212,8 +201,15 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
      * @throws SQLException  For SQLException thrown by the task
      */
     public final <T> T execute(ConnectionFunction<T> task, long wait) throws SQLException, BusyException {
+        return execute(task, wait, false);
+    }
+
+    final <T> T execute(ConnectionFunction<T> task, long wait, boolean readOnly) throws SQLException, BusyException {
+        if (closed) throw new IllegalStateException("closed");
+        if (!ready) throw new IllegalStateException("Not yet initialized");
+        checkAsync_();
         try {
-            return executeWithException(task::apply, wait);
+            return connectionPool.executeWithException(task::apply, wait, readOnly);
         } catch (SQLException | BusyException | RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -381,15 +377,6 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     //
     // QUERY
     //
-
-
-    @SuppressWarnings("unused")
-    public static <T> T query(PreparedStatement preparedStatement, ResultSetFunction<T> resultSetFunction) throws SQLException, BusyException {
-        try (ResultSet rs = preparedStatement.executeQuery()) {
-            return resultSetFunction.apply(rs);
-        }
-    }
-
 
     @SuppressWarnings({"unused", "UnusedReturnValue"})
     public <T> T query(String statement, ResultSetFunction<T> resultSetFunction, long wait, Object... args) throws SQLException, BusyException {

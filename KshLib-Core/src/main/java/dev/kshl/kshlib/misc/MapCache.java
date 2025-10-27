@@ -3,9 +3,10 @@ package dev.kshl.kshlib.misc;
 import javax.annotation.Nonnull;
 import javax.annotation.OverridingMethodsMustInvokeSuper;
 import java.util.AbstractMap;
-import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -27,10 +28,12 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
         return t;
     });
 
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(executor::shutdown));
+    }
+
     protected final long timeToLive;
     final HashMap<K, V> forward = new HashMap<>();
-
-    private final ArrayDeque<Pair<Object, Long>> timeAddedQueue = new ArrayDeque<>();
     private final Map<Object, Long> lastTouch = new ConcurrentHashMap<>();
 
     final ReentrantReadWriteLock.ReadLock r;
@@ -62,7 +65,6 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
         w.lock();
         try {
             forward.clear();
-            timeAddedQueue.clear();
             lastTouch.clear();
             doClear();
         } finally {
@@ -123,7 +125,7 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
         } finally {
             r.unlock();
 
-            if (value != null) {
+            if (value != null && needTouch(key)) {
                 w.lock();
                 try {
                     //noinspection SuspiciousMethodCalls
@@ -138,12 +140,10 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     }
 
     protected boolean needTouch(Object key) {
-        return System.currentTimeMillis() - lastTouch.getOrDefault(key, 0L) > 1000;
+        return System.currentTimeMillis() - lastTouch.getOrDefault(key, 0L) > Math.min(1000, timeToLive / 100);
     }
 
     protected final void touchUnderWriteLock(Object key) {
-        long expiration = System.currentTimeMillis() + timeToLive;
-        timeAddedQueue.add(new Pair<>(key, expiration));
         lastTouch.put(key, System.currentTimeMillis());
     }
 
@@ -240,18 +240,21 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
         w.lock();
         try {
             final long currentTime = System.currentTimeMillis();
-            Map<Object, V> removed = new HashMap<>();
 
-            Pair<Object, Long> element;
-            while ((element = timeAddedQueue.peek()) != null) {
-                if (currentTime < element.getRight()) break;
-
-                timeAddedQueue.poll();
-
-                if (currentTime >= lastTouch.getOrDefault(element.getLeft(), 0L) + timeToLive) {
-                    removed.put(element.getLeft(), remove(element.getLeft()));
+            Set<Object> toRemove = new HashSet<>();
+            Iterator<Entry<Object, Long>> it = lastTouch.entrySet().iterator();
+            while (it.hasNext()) {
+                Entry<Object, Long> entry = it.next();
+                if (currentTime - entry.getValue() > timeToLive) {
+                    toRemove.add(entry.getKey());
+                    it.remove();
                 }
             }
+            if (toRemove.isEmpty()) return;
+
+            Map<Object, V> removed = new HashMap<>();
+            toRemove.forEach(k -> removed.put(k, remove(k)));
+
             doCleanUp(removed);
         } finally {
             w.unlock();

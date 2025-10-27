@@ -35,7 +35,7 @@ public class ConnectionPoolHikari extends ConnectionPool {
     }
 
     @Override
-    protected <T> T executeWithException_(ConnectionFunctionWithException<T> connectionFunction, long wait) throws Exception {
+    protected <T> T executeWithException_(ConnectionFunctionWithException<T> connectionFunction, long wait, boolean readOnly) throws Exception {
         if (isClosing()) {
             throw new BusyException("Database closing");
         }

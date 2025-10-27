@@ -24,7 +24,6 @@ public abstract class SQLIDManager<V> {
 
     public SQLIDManager(ConnectionManager sql, String table, String datatype) {
         this.datatype = datatype;
-        if (!table.matches("[\\w_]+")) throw new IllegalArgumentException("Invalid table name " + table);
         this.sql = sql;
         this.table = ConnectionManager.validateTableName(table);
     }
