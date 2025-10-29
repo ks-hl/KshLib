@@ -57,6 +57,8 @@ public class SQLiteConnectionPoolTest {
         assertThrowsReadOnly(() -> connectionManager.execute(insert).readOnly().executeQuery(1000));
 
         connectionManager.execute(insert, 3000L);
+
+        assertThrowsReadOnly(() -> connectionManager.execute("PRAGMA user_version = 2").readOnly().executeQuery(1000));
     }
 
     @Test
@@ -146,6 +148,6 @@ public class SQLiteConnectionPoolTest {
 
     private static void assertThrowsReadOnly(Executable executable) {
         var e = assertThrows(SQLiteException.class, executable);
-        assertEquals(SQLiteErrorCode.SQLITE_READONLY.code, e.getErrorCode());
+        assertEquals(SQLiteErrorCode.SQLITE_READONLY, SQLiteErrorCode.getErrorCode(e.getErrorCode()));
     }
 }
