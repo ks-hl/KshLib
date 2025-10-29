@@ -10,17 +10,25 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class ConcurrentArrayList<E> implements List<E> {
-    final ReentrantReadWriteLock.ReadLock r;
-    final ReentrantReadWriteLock.WriteLock w;
+public final class ConcurrentArrayList<E> implements List<E> {
+    private final ReentrantReadWriteLock.ReadLock r;
+    private final ReentrantReadWriteLock.WriteLock w;
     private final ArrayList<E> list = new ArrayList<>();
 
     public ConcurrentArrayList() {
-        this(null);
+        this(null, true);
+    }
+
+    public ConcurrentArrayList(boolean fair) {
+        this(null, fair);
     }
 
     public ConcurrentArrayList(@Nullable Collection<E> contents) {
-        var rw = new ReentrantReadWriteLock();
+        this(contents, true);
+    }
+
+    public ConcurrentArrayList(@Nullable Collection<E> contents, boolean fair) {
+        var rw = new ReentrantReadWriteLock(fair);
         r = rw.readLock();
         w = rw.writeLock();
 
@@ -32,6 +40,26 @@ public class ConcurrentArrayList<E> implements List<E> {
         r.lock();
         try {
             return list.size();
+        } finally {
+            r.unlock();
+        }
+    }
+
+    @Override
+    public boolean isEmpty() {
+        r.lock();
+        try {
+            return list.isEmpty();
+        } finally {
+            r.unlock();
+        }
+    }
+
+    @Override
+    public boolean contains(Object o) {
+        r.lock();
+        try {
+            return list.contains(o);
         } finally {
             r.unlock();
         }
@@ -54,6 +82,26 @@ public class ConcurrentArrayList<E> implements List<E> {
             return list.add(e);
         } finally {
             w.unlock();
+        }
+    }
+
+    @Override
+    public boolean remove(Object o) {
+        w.lock();
+        try {
+            return list.remove(o);
+        } finally {
+            w.unlock();
+        }
+    }
+
+    @Override
+    public boolean containsAll(@Nonnull Collection<?> collection) {
+        r.lock();
+        try {
+            return list.containsAll(collection);
+        } finally {
+            r.unlock();
         }
     }
 
@@ -88,10 +136,40 @@ public class ConcurrentArrayList<E> implements List<E> {
     }
 
     @Override
+    public int indexOf(Object o) {
+        r.lock();
+        try {
+            return list.indexOf(o);
+        } finally {
+            r.unlock();
+        }
+    }
+
+    @Override
+    public int lastIndexOf(Object o) {
+        r.lock();
+        try {
+            return list.lastIndexOf(o);
+        } finally {
+            r.unlock();
+        }
+    }
+
+    @Override
     public boolean addAll(@Nonnull Collection<? extends E> c) {
         w.lock();
         try {
             return list.addAll(c);
+        } finally {
+            w.unlock();
+        }
+    }
+
+    @Override
+    public boolean addAll(int i, @Nonnull Collection<? extends E> collection) {
+        w.lock();
+        try {
+            return list.addAll(i, collection);
         } finally {
             w.unlock();
         }
@@ -111,6 +189,18 @@ public class ConcurrentArrayList<E> implements List<E> {
     @Nonnull
     public Iterator<E> iterator() {
         return snapshot().iterator();
+    }
+
+    @Override
+    @Nonnull
+    public Object[] toArray() {
+        return snapshot().toArray();
+    }
+
+    @Override
+    @Nonnull
+    public <T> T[] toArray(@Nonnull T[] ts) {
+        return snapshot().toArray(ts);
     }
 
     @Override
@@ -145,6 +235,16 @@ public class ConcurrentArrayList<E> implements List<E> {
         w.lock();
         try {
             return list.removeAll(c);
+        } finally {
+            w.unlock();
+        }
+    }
+
+    @Override
+    public boolean retainAll(@Nonnull Collection<?> collection) {
+        w.lock();
+        try {
+            return list.retainAll(collection);
         } finally {
             w.unlock();
         }
