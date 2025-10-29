@@ -30,7 +30,7 @@ public class StatementBuilder<T> {
     private Object[] args;
     @Getter
     private boolean used;
-    private final boolean readOnly;
+    private boolean readOnly;
 
     StatementBuilder(ConnectionManager connectionManager, ConnectionFunction<T> connectionFunction) {
         this(FunctionType.CONNECTION, connectionManager, null, connectionFunction, null, null);
@@ -71,6 +71,11 @@ public class StatementBuilder<T> {
             throw new UnsupportedOperationException("args are not applicable to ConnectionConsumer/Functions or PreparedStatementConsumer/Functions");
         }
         this.args = args;
+        return this;
+    }
+
+    public StatementBuilder<T> readOnly() {
+        this.readOnly = true;
         return this;
     }
 
