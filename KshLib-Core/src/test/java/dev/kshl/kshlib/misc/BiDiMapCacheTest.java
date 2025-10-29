@@ -1,12 +1,20 @@
 package dev.kshl.kshlib.misc;
 
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 class BiDiMapCacheTest {
     BiDiMapCache<String, Integer> cache;
@@ -27,7 +35,10 @@ class BiDiMapCacheTest {
         long end = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < end) {
             if (cond.getAsBoolean()) return;
-            try { Thread.sleep(5); } catch (InterruptedException ignored) {}
+            try {
+                Thread.sleep(5);
+            } catch (InterruptedException ignored) {
+            }
             if (tick != null) tick.run();
         }
         fail("Condition not met within " + timeout.toMillis() + "ms");
@@ -79,12 +90,18 @@ class BiDiMapCacheTest {
     @Test
     void getKeys_touches_extending_ttl() {
         cache.put("p", 7);
-        try { Thread.sleep(ttl / 2); } catch (InterruptedException ignored) {}
+        try {
+            Thread.sleep(ttl / 2);
+        } catch (InterruptedException ignored) {
+        }
         // calling getKeys should touch internal keys
         assertEquals(Set.of("p"), cache.getKeys(7));
 
         // after another ~half ttl, still present due to touch
-        try { Thread.sleep(ttl / 2); } catch (InterruptedException ignored) {}
+        try {
+            Thread.sleep(ttl / 2);
+        } catch (InterruptedException ignored) {
+        }
         assertTrue(cache.containsKey("p"));
 
         // then wait > ttl again; now it should expire

@@ -3,7 +3,6 @@ package dev.kshl.kshlib.sql;
 import dev.kshl.kshlib.concurrent.ConcurrentArrayList;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunctionWithException;
-import dev.kshl.kshlib.function.ThrowingSupplier;
 import org.sqlite.SQLiteConfig;
 import org.sqlite.SQLiteOpenMode;
 
@@ -13,15 +12,11 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.function.Supplier;
 
 public class ConnectionPoolSQLite extends ConnectionPool {
     private final Connection writeConnection;
@@ -29,8 +24,7 @@ public class ConnectionPoolSQLite extends ConnectionPool {
     private final List<Connection> allReadConnections = new ConcurrentArrayList<>();
     private int establishedConnections;
 
-    private final ReentrantReadWriteLock.ReadLock r;
-    private final ReentrantReadWriteLock.WriteLock w;
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
 
     public ConnectionPoolSQLite(File file) throws IOException, SQLException, ClassNotFoundException {
         super();
@@ -70,10 +64,6 @@ public class ConnectionPoolSQLite extends ConnectionPool {
                 readConnections.add(connection);
             }
         }
-
-        var lock = new ReentrantReadWriteLock(true);
-        r = lock.readLock();
-        w = lock.writeLock();
     }
 
     @Override
@@ -81,7 +71,7 @@ public class ConnectionPoolSQLite extends ConnectionPool {
         if (isClosing()) throw new BusyException("Database closing");
         if (readOnly) {
             long start = System.currentTimeMillis();
-            if (!r.tryLock(wait, TimeUnit.MILLISECONDS)) {
+            if (!lock.readLock().tryLock(wait, TimeUnit.MILLISECONDS)) {
                 throw new BusyException("Database busy");
             }
             try {
@@ -101,16 +91,19 @@ public class ConnectionPoolSQLite extends ConnectionPool {
                     }
                 }
             } finally {
-                r.unlock();
+                lock.readLock().unlock();
             }
         } else {
-            if (!w.tryLock(wait, TimeUnit.MILLISECONDS)) {
+            if (lock.getReadHoldCount() > 0) {
+                throw new IllegalStateException("Cannot obtain write lock while holding a read lock");
+            }
+            if (!lock.writeLock().tryLock(wait, TimeUnit.MILLISECONDS)) {
                 throw new BusyException("Database busy");
             }
             try {
                 if (isClosing()) throw new BusyException("Database closing");
                 var ret = connectionFunction.apply(writeConnection);
-                if (w.getHoldCount() == 1 && !writeConnection.getAutoCommit()) {
+                if (lock.writeLock().getHoldCount() == 1 && !writeConnection.getAutoCommit()) {
                     try {
                         writeConnection.setAutoCommit(true);
                     } catch (SQLException ignored) {
@@ -119,7 +112,7 @@ public class ConnectionPoolSQLite extends ConnectionPool {
                 }
                 return ret;
             } finally {
-                w.unlock();
+                lock.writeLock().unlock();
             }
         }
     }
@@ -138,7 +131,7 @@ public class ConnectionPoolSQLite extends ConnectionPool {
     @Override
     public void closeInternal() {
         try {
-            w.lockInterruptibly();
+            lock.writeLock().lockInterruptibly();
         } catch (InterruptedException ignored) {
         }
         try {
