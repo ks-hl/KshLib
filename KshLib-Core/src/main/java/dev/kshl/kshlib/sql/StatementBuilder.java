@@ -2,7 +2,7 @@ package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunction;
-import dev.kshl.kshlib.function.PreparedStatementFunction;
+import dev.kshl.kshlib.function.ResultSetConnectionFunction;
 import dev.kshl.kshlib.function.ResultSetFunction;
 import lombok.Getter;
 
@@ -33,42 +33,38 @@ public class StatementBuilder<T> {
     private boolean readOnly;
 
     StatementBuilder(ConnectionManager connectionManager, ConnectionFunction<T> connectionFunction) {
-        this(FunctionType.CONNECTION, connectionManager, null, connectionFunction, null, null);
-    }
-
-    StatementBuilder(ConnectionManager connectionManager, String statement, PreparedStatementFunction<T> preparedStatementFunction) {
-        this(FunctionType.PREPARED_STATEMENT, connectionManager, Objects.requireNonNull(statement, "Statement must not be null"), null, preparedStatementFunction, null);
+        this(FunctionType.CONNECTION, connectionManager, null, connectionFunction, null);
     }
 
     StatementBuilder(ConnectionManager connectionManager, String statement, ResultSetFunction<T> resultSetFunction) {
-        this(FunctionType.RESULT_SET, connectionManager, Objects.requireNonNull(statement, "Statement must not be null"), null, null, resultSetFunction);
+        this(connectionManager, statement, (connection, resultSet) -> resultSetFunction.apply(resultSet));
+    }
+
+    StatementBuilder(ConnectionManager connectionManager, String statement, ResultSetConnectionFunction<T> resultSetFunction) {
+        this(FunctionType.RESULT_SET, connectionManager, Objects.requireNonNull(statement, "Statement must not be null"), null, resultSetFunction);
     }
 
     StatementBuilder(ConnectionManager connectionManager, String statement) {
-        this(FunctionType.VOID, connectionManager, statement, null, null, rs -> null);
+        this(FunctionType.VOID, connectionManager, statement, null, (connection, rs) -> null);
     }
 
     private StatementBuilder(FunctionType functionType,
                              ConnectionManager connectionManager,
                              String statement,
                              ConnectionFunction<T> connectionFunction,
-                             PreparedStatementFunction<T> preparedStatementFunction,
-                             ResultSetFunction<T> resultSetFunction) {
+                             ResultSetConnectionFunction<T> resultSetFunction) {
         this.functionType = functionType;
         this.connectionManager = connectionManager;
         if (resultSetFunction != null) {
-            preparedStatementFunction = adaptToPreparedStatement(resultSetFunction);
-        }
-        if (preparedStatementFunction != null) {
-            connectionFunction = adaptToConnection(statement, preparedStatementFunction);
+            connectionFunction = adaptToConnection(statement, resultSetFunction);
         }
         this.connectionFunction = connectionFunction;
         this.readOnly = statement != null && statement.trim().toLowerCase().startsWith("select ");
     }
 
     public StatementBuilder<T> args(Object... args) {
-        if (this.functionType == FunctionType.CONNECTION || this.functionType == FunctionType.PREPARED_STATEMENT) {
-            throw new UnsupportedOperationException("args are not applicable to ConnectionConsumer/Functions or PreparedStatementConsumer/Functions");
+        if (this.functionType == FunctionType.CONNECTION) {
+            throw new UnsupportedOperationException("args are not applicable to ConnectionConsumer/Functions");
         }
         this.args = args;
         return this;
@@ -142,7 +138,7 @@ public class StatementBuilder<T> {
         used = true;
     }
 
-    private ConnectionFunction<T> adaptToConnection(String statement, PreparedStatementFunction<T> preparedStatementFunction) {
+    private ConnectionFunction<T> adaptToConnection(String statement, ResultSetConnectionFunction<T> resultSetFunction) {
         return connection -> {
             connectionManager.debugSQLStatement((readOnly ? "[READONLY] " : "") + statement, args);
             PreparedStatement preparedStatement;
@@ -155,34 +151,28 @@ public class StatementBuilder<T> {
                 if (this.args != null && this.args.length > 0) {
                     connectionManager.prepare(preparedStatement, args);
                 }
-                return preparedStatementFunction.apply(preparedStatement);
-            } finally {
-                preparedStatement.close();
-            }
-        };
-    }
-
-    private PreparedStatementFunction<T> adaptToPreparedStatement(ResultSetFunction<T> resultSetFunction) {
-        return preparedStatement -> {
-            connectionManager.checkEnoughArguments(preparedStatement, args);
-            if (action == Action.GENERATED) {
-                preparedStatement.execute();
-                try (ResultSet rs = preparedStatement.getGeneratedKeys()) {
-                    if (rs.next()) result = rs.getInt(1);
-                }
-                return null;
-            } else if (action == Action.ROWS) {
-                this.result = preparedStatement.executeUpdate();
-                return null;
-            } else {
-                if (functionType == FunctionType.VOID) {
+                connectionManager.checkEnoughArguments(preparedStatement, args);
+                if (action == Action.GENERATED) {
                     preparedStatement.execute();
-                    return resultSetFunction.apply(null);
+                    try (ResultSet rs = preparedStatement.getGeneratedKeys()) {
+                        if (rs.next()) result = rs.getInt(1);
+                    }
+                    return null;
+                } else if (action == Action.ROWS) {
+                    this.result = preparedStatement.executeUpdate();
+                    return null;
                 } else {
-                    try (ResultSet rs = preparedStatement.executeQuery()) {
-                        return resultSetFunction.apply(rs);
+                    if (functionType == FunctionType.VOID) {
+                        preparedStatement.execute();
+                        return resultSetFunction.apply(connection, null);
+                    } else {
+                        try (ResultSet rs = preparedStatement.executeQuery()) {
+                            return resultSetFunction.apply(connection, rs);
+                        }
                     }
                 }
+            } finally {
+                preparedStatement.close();
             }
         };
     }
@@ -192,6 +182,6 @@ public class StatementBuilder<T> {
     }
 
     private enum FunctionType {
-        CONNECTION, PREPARED_STATEMENT, VOID, RESULT_SET
+        CONNECTION, VOID, RESULT_SET
     }
 }

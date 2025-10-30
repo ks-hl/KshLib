@@ -3,9 +3,6 @@ package dev.kshl.kshlib.sql;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionConsumer;
 import dev.kshl.kshlib.function.ConnectionFunction;
-import dev.kshl.kshlib.function.ConnectionFunctionWithException;
-import dev.kshl.kshlib.function.PreparedStatementConsumer;
-import dev.kshl.kshlib.function.PreparedStatementFunction;
 import dev.kshl.kshlib.function.ResultSetConsumer;
 import dev.kshl.kshlib.function.ResultSetFunction;
 import dev.kshl.kshlib.function.ThrowingFunction;
@@ -335,25 +332,6 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         execute(stmt).args(args).executeQuery(connection);
     }
 
-
-    public final <T> T execute(Connection connection, String statement, PreparedStatementFunction<T> function) throws SQLException {
-        return applyPreparedStatement(statement, function).executeQuery(connection);
-    }
-
-
-    public final void execute(Connection connection, String statement, PreparedStatementConsumer consumer) throws SQLException {
-        acceptPreparedStatement(statement, consumer).executeQuery(connection);
-    }
-
-    public final void execute(String statement, PreparedStatementConsumer consumer, long wait) throws SQLException, BusyException {
-        acceptPreparedStatement(statement, consumer).executeQuery(wait);
-    }
-
-
-    public final <T> T execute(String statement, PreparedStatementFunction<T> function, long wait) throws SQLException, BusyException {
-        return applyPreparedStatement(statement, function).executeQuery(wait);
-    }
-
     public <T> void executeBatch(String statement, Collection<T> collection, ThrowingFunction<T, List<?>, SQLException> valueFunction, long wait) throws SQLException, BusyException {
         execute((ConnectionConsumer) connection -> executeBatch(connection, statement, collection, valueFunction), wait);
     }
@@ -469,11 +447,9 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     public final int count(Connection connection, String table) throws SQLException {
         String stmtStr = getCountStmt() + table;
         debugSQLStatement(stmtStr, table);
-        return execute(connection, stmtStr, preparedStatement -> {
-            try (ResultSet rs = preparedStatement.executeQuery()) {
-                if (rs.next()) return rs.getInt(1);
-                return -1;
-            }
+        return query(connection, stmtStr, rs -> {
+            if (rs.next()) return rs.getInt(1);
+            return -1;
         });
     }
 
@@ -754,25 +730,6 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     public StatementBuilder<Void> accept(ConnectionConsumer consumer) {
         return apply(rs -> {
             consumer.accept(rs);
-            return null;
-        });
-    }
-
-    /**
-     * Starts the build process for a statement which provides a PreparedStatement build from the provided statement string and returns {@param T}
-     */
-    @CheckReturnValue
-    public <T> StatementBuilder<T> applyPreparedStatement(String statement, PreparedStatementFunction<T> function) {
-        return new StatementBuilder<>(this, statement, function);
-    }
-
-    /**
-     * Starts the build process for a statement which provides a PreparedStatement build from the provided statement string
-     */
-    @CheckReturnValue
-    public StatementBuilder<Void> acceptPreparedStatement(String statement, PreparedStatementConsumer consumer) {
-        return applyPreparedStatement(statement, rs -> {
-            consumer.consume(rs);
             return null;
         });
     }

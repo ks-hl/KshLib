@@ -4,6 +4,7 @@ import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.misc.MapCache;
 import dev.kshl.kshlib.misc.Pair;
 import dev.kshl.kshlib.misc.TreeSetString;
+import dev.kshl.kshlib.misc.snowflake.SnowflakeOrdered;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -21,6 +22,7 @@ public class SQLUsernameManager implements ISQLManager {
     private final String table;
     private final MapCache<Integer, String> cacheUIDToUsername = new MapCache<>(1, TimeUnit.HOURS);
     private final MapCache<String, Integer> cacheUsernameToUID = new MapCache<>(1, TimeUnit.HOURS);
+    private final SnowflakeOrdered snowflakeOrdered = new SnowflakeOrdered();
     private final TreeSetString recentUsernames = new TreeSetString.CaseInsensitive();
     private boolean recentUsernamesInitialized;
 
@@ -32,11 +34,20 @@ public class SQLUsernameManager implements ISQLManager {
     }
 
     public void init(Connection connection) throws SQLException {
+        init(connection, true);
+    }
+
+    void init(Connection connection, boolean index) throws SQLException {
         sql.executeTransaction(connection, () -> {
-            boolean needsMigration = sql.tableExists(connection, table) && !sql.uniqueConstraintExists(connection, table, "uid", "username");
+            boolean tableAlreadyExists = sql.tableExists(connection, table);
+            boolean needsMigration = tableAlreadyExists && !sql.uniqueConstraintExists(connection, table, "uid", "username");
             if (needsMigration) {
                 sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
                 sql.execute(connection, "ALTER TABLE " + table + " RENAME TO " + table + "_temp");
+            }
+
+            if (tableAlreadyExists) {
+                sql.execute(connection, "UPDATE " + table + " SET time=time*? WHERE time<176179285000000", SnowflakeOrdered.COUNTER_FACTOR);
             }
 
             sql.execute(connection, String.format("""
@@ -59,14 +70,16 @@ public class SQLUsernameManager implements ISQLManager {
                     sql.execute(connection, "DROP INDEX IF EXISTS idx_time");
                 }
             }
-            sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_time ON %s (time)", table, table));
-            sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_uid_time ON %s (uid, time DESC)", table, table));
+            if (index) {
+                sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_time ON %s (time)", table, table));
+                sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_uid_time ON %s (uid, time DESC)", table, table));
 
-            // Case-insensitive username index
-            if (sql.isMySQL()) {
-                sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_username_time ON %s (username, time DESC)", table, table));
-            } else {
-                sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_username_time ON %s (username COLLATE NOCASE, time DESC)", table, table)); // Case-insensitive indexing
+                // Case-insensitive username index
+                if (sql.isMySQL()) {
+                    sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_username_time ON %s (username, time DESC)", table, table));
+                } else {
+                    sql.execute(connection, String.format("CREATE INDEX IF NOT EXISTS idx_%s_username_time ON %s (username COLLATE NOCASE, time DESC)", table, table)); // Case-insensitive indexing
+                }
             }
         });
     }
@@ -76,7 +89,7 @@ public class SQLUsernameManager implements ISQLManager {
         if (uid <= 0) throw new IllegalArgumentException("UID must be > 0");
 
         String stored = getUsername(uid).orElse(null);
-        long now = System.currentTimeMillis();
+        long now = snowflakeOrdered.getNextSnowflake();
         if (sql.isMySQL()) {
             sql.execute(String.format("""
                     INSERT INTO %s (time, uid, username)
@@ -138,14 +151,16 @@ public class SQLUsernameManager implements ISQLManager {
                 throw new IllegalStateException("recentUsernames already initialized");
             }
             sql.query(connection, String.format("""
-                    SELECT username FROM (
-                      SELECT username, ROW_NUMBER()
-                      OVER (PARTITION BY uid ORDER BY time DESC) AS rn
-                      FROM %s
-                    ) t
-                    WHERE rn = 1
-                    LIMIT ?
-                    """, table), rs -> {
+                    SELECT t.username
+                    FROM %s AS t
+                    JOIN (
+                        SELECT uid, MAX(time) AS max_time
+                        FROM %s
+                        GROUP BY uid
+                    ) m
+                        ON m.uid = t.uid AND m.max_time = t.time
+                    LIMIT ?;
+                    """, table, table), rs -> {
                 while (rs.next()) {
                     String name = rs.getString(1);
                     if (name == null) continue;
@@ -187,24 +202,20 @@ public class SQLUsernameManager implements ISQLManager {
             return Optional.of(new Pair<>(cachedUID, cachedUsername));
         }
 
-        Optional<Pair<Integer, String>> uidName = sql.query(
-                String.format("""
-                        SELECT u.uid, u.username
-                        FROM %1$s u
-                        WHERE u.uid = (
-                            SELECT uid FROM %1$s
-                            WHERE username = ? %2$s
-                            ORDER BY time DESC LIMIT 1
-                        )
-                        ORDER BY u.time DESC
-                        LIMIT 1
-                        """, table, sql.isMySQL() ? "" : "COLLATE NOCASE"),
-                rs -> {
-                    if (!rs.next()) return Optional.empty();
-                    return Optional.of(new Pair<>(rs.getInt(1), rs.getString(2)));
-                },
-                3000L, username
-        );
+        Optional<Pair<Integer, String>> uidName = sql.query(String.format("""
+                SELECT u.uid, u.username
+                FROM %1$s u
+                WHERE u.uid = (
+                    SELECT uid FROM %1$s
+                    WHERE username = ? %2$s
+                    ORDER BY time DESC LIMIT 1
+                )
+                ORDER BY u.time DESC
+                LIMIT 1
+                """, table, sql.isMySQL() ? "" : "COLLATE NOCASE"), rs -> {
+            if (!rs.next()) return Optional.empty();
+            return Optional.of(new Pair<>(rs.getInt(1), rs.getString(2)));
+        }, 3000L, username);
 
         cache(uidName.map(Pair::getLeft).orElse(null), uidName.map(Pair::getRight).orElse(username));
 

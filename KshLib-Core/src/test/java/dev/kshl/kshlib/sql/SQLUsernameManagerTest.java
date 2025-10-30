@@ -28,7 +28,7 @@ public class SQLUsernameManagerTest {
                 super.cache(uid, username);
             }
         };
-        connectionManager.execute(usernameManager::init, 3000L);
+        connectionManager.execute((ConnectionConsumer) connection -> usernameManager.init(connection, false), 3000L);
         return usernameManager;
     }
 
@@ -166,7 +166,12 @@ public class SQLUsernameManagerTest {
 
         // Populate and query
         cm.execute((ConnectionConsumer) connection -> m.populateRecentUsernames(connection, 5000), 3000L);
-        assertTrue(m.getRecentUsernamesSize() >= 4);
+        cm.query("SELECT * FROM usernames", rs -> {
+            while (rs.next()) {
+                System.out.println("Snowflake: " + rs.getLong("time") + ", Username: " + rs.getString("username"));
+            }
+        }, 3000L);
+        assertEquals(4, m.getRecentUsernamesSize());
 
         Set<String> tNames = m.getRecentUsernamesStartingWith("to");
         assertTrue(tNames.contains("Tom"));

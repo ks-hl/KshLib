@@ -130,10 +130,7 @@ public class ConnectionPoolSQLite extends ConnectionPool {
 
     @Override
     public void closeInternal() {
-        try {
-            lock.writeLock().lockInterruptibly();
-        } catch (InterruptedException ignored) {
-        }
+        lock.writeLock().lock();
         try {
             writeConnection.close();
         } catch (SQLException ignored) {

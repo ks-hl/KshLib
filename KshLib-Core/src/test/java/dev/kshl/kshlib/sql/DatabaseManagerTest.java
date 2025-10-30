@@ -2,14 +2,15 @@ package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunction;
-import dev.kshl.kshlib.function.PreparedStatementFunction;
+import dev.kshl.kshlib.function.ResultSetFunction;
 import dev.kshl.kshlib.function.ThrowingConsumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,15 +56,25 @@ public class DatabaseManagerTest {
         System.out.println("Executed " + (queriesPerThread * numThreads) + " queries");
     }
 
+    private static TestConnectionManager testConnectionManagerMySQL;
+
     private static Stream<ConnectionManager> provideConnectionManagers() throws IOException, SQLException, ClassNotFoundException {
         List<ConnectionManager> connectionManagerList = new ArrayList<>();
 
-        File sqliteFile = new File("/tmp/kshlib/test.db");
-        //noinspection ResultOfMethodCallIgnored
-        sqliteFile.delete();
-        connectionManagerList.add(new TestConnectionManager(sqliteFile));  // SQLite)
+        File sqliteFile = new File("/tmp/kshlib/" + UUID.randomUUID() + ".db");
+        assertFalse(sqliteFile.exists());
+        connectionManagerList.add(new TestConnectionManager(sqliteFile) {
+            @Override
+            public void close() {
+                super.close();
+                assertTrue(sqliteFile.delete());
+            }
+        });  // SQLite)
         try {
-            connectionManagerList.add(new TestConnectionManager("10.0.70.110:3306", "test", "test", "password", 8));  // MySQL)
+            if (testConnectionManagerMySQL == null) {
+                testConnectionManagerMySQL = new TestConnectionManager("10.0.70.110:3306", "test", "test", "password", 8);
+            }
+            connectionManagerList.add(testConnectionManagerMySQL);  // MySQL)
         } catch (SQLException e) {
             System.err.println("MySQL db not found or error occurred");
             e.printStackTrace();
@@ -76,12 +87,12 @@ public class DatabaseManagerTest {
     public void testCommonDatabaseOperations(ConnectionManager connectionManager) throws SQLException, BusyException, ExecutionException, InterruptedException, NoSuchAlgorithmException {
         int uid = (int) (System.currentTimeMillis() % 10000000);
         long time = System.currentTimeMillis();
+        connectionManager.execute("DROP TABLE IF EXISTS test_table", 3000L);
+        connectionManager.execute("CREATE TABLE test_table (uid INT,time BIGINT)", 3000L);
         connectionManager.execute("INSERT INTO test_table (uid,time) VALUES (?,?)", 10000L, uid, time);
 
-        assertTrue(connectionManager.execute("SELECT * FROM test_table", (PreparedStatementFunction<Boolean>) preparedStatement -> {
-            try (ResultSet rs = preparedStatement.executeQuery()) {
-                if (rs.next()) return rs.getLong("time") == time && rs.getInt("uid") == uid;
-            }
+        assertTrue(connectionManager.query("SELECT * FROM test_table", (ResultSetFunction<Boolean>) rs -> {
+            if (rs.next()) return rs.getLong("time") == time && rs.getInt("uid") == uid;
             return false;
         }, 30000L));
 
@@ -237,10 +248,13 @@ public class DatabaseManagerTest {
         assertThrows(ArrayIndexOutOfBoundsException.class, () -> sql.execute("SELECT 1 FROM " + table, 3000L, 1));
     }
 
+    @TempDir
+    Path path;
+
     @Test
     public void testInitCompletable() throws SQLException, IOException, ClassNotFoundException {
         AtomicBoolean touched = new AtomicBoolean(false);
-        try (TestConnectionManager sql = new TestConnectionManager(new File("/tmp/kshlib/" + UUID.randomUUID() + ".db"))) {
+        try (TestConnectionManager sql = new TestConnectionManager(path.resolve(UUID.randomUUID() + ".db").toFile())) {
             sql.whenInitialized().thenRun(() -> touched.set(true));
         }
         assertTrue(touched.get());

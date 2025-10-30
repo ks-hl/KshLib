@@ -15,6 +15,7 @@ class TestConnectionManager extends ConnectionManager {
 
     public TestConnectionManager(String uri, String database, String user, String pwd, int poolSize) throws SQLException, ClassNotFoundException, IOException {
         super(uri, database, user, pwd, poolSize);
+        System.out.println("TestConnectionManager: " + uri + " " + database + " " + user + " " + pwd + " " + poolSize);
 
         init();
     }
@@ -36,9 +37,6 @@ class TestConnectionManager extends ConnectionManager {
                 }
             });
         }
-
-        execute(connection, "DROP TABLE IF EXISTS test_table");
-        execute(connection, "CREATE TABLE IF NOT EXISTS test_table (uid INT, time BIGINT)");
     }
 
     @Override
@@ -49,5 +47,9 @@ class TestConnectionManager extends ConnectionManager {
     @Override
     protected boolean checkAsync() {
         return true;
+    }
+
+    @Override
+    public void close() {
     }
 }
