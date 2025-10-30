@@ -24,12 +24,12 @@ public class BiDiMapCache<K, V> extends MapCache<K, V> {
 
     @Override
     public boolean containsValue(Object value) {
-        r.lock();
+        readLock.lock();
         try {
             //noinspection SuspiciousMethodCalls
             return reverse.containsKey(value);
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
@@ -40,25 +40,25 @@ public class BiDiMapCache<K, V> extends MapCache<K, V> {
     }
 
     public Set<K> getKeys(V value) {
-        r.lock();
+        readLock.lock();
         Set<K> keys;
         try {
             keys = reverse.get(value);
             if (keys == null) keys = Set.of();
             keys = Set.copyOf(keys);
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
 
         if (keys.stream().anyMatch(this::needTouch)) {
-            w.lock();
+            writeLock.lock();
             try {
                 for (K key : keys) {
                     if (!forward.containsKey(key)) continue;
                     touchUnderWriteLock(key);
                 }
             } finally {
-                w.unlock();
+                writeLock.unlock();
             }
         }
         return keys;

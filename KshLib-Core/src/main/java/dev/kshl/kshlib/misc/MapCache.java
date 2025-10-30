@@ -36,8 +36,8 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     final HashMap<K, V> forward = new HashMap<>();
     private final Map<Object, Long> lastTouch = new ConcurrentHashMap<>();
 
-    final ReentrantReadWriteLock.ReadLock r;
-    final ReentrantReadWriteLock.WriteLock w;
+    final ReentrantReadWriteLock.ReadLock readLock;
+    final ReentrantReadWriteLock.WriteLock writeLock;
 
     private final ScheduledFuture<?> cleanupFuture;
 
@@ -51,8 +51,8 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
         cleanupFuture = executor.scheduleAtFixedRate(this::cleanup, interval, interval, TimeUnit.NANOSECONDS);
 
         var rw = new ReentrantReadWriteLock();
-        r = rw.readLock();
-        w = rw.writeLock();
+        readLock = rw.readLock();
+        writeLock = rw.writeLock();
     }
 
     public MapCache(long timeToLiveMillis) {
@@ -62,13 +62,13 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     @Override
     @OverridingMethodsMustInvokeSuper
     public final void clear() {
-        w.lock();
+        writeLock.lock();
         try {
             forward.clear();
             lastTouch.clear();
             doClear();
         } finally {
-            w.unlock();
+            writeLock.unlock();
         }
     }
 
@@ -78,62 +78,62 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     @Nonnull
     @Override
     public final Set<K> keySet() {
-        r.lock();
+        readLock.lock();
         try {
             return Set.copyOf(forward.keySet());
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
     @Override
     public final int size() {
-        r.lock();
+        readLock.lock();
         try {
             return forward.size();
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
     @Override
     public final boolean containsKey(Object key) {
-        r.lock();
+        readLock.lock();
         try {
             return forward.containsKey(key);
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
     @Override
     public boolean containsValue(Object value) {
-        r.lock();
+        readLock.lock();
         try {
             return forward.containsValue(value);
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
     @Override
     public final V get(Object key) {
-        r.lock();
+        readLock.lock();
         V value = null;
         try {
             return value = forward.get(key);
         } finally {
-            r.unlock();
+            readLock.unlock();
 
             if (value != null && needTouch(key)) {
-                w.lock();
+                writeLock.lock();
                 try {
                     //noinspection SuspiciousMethodCalls
                     if (forward.containsKey(key)) {
                         touchUnderWriteLock(key);
                     }
                 } finally {
-                    w.unlock();
+                    writeLock.unlock();
                 }
             }
         }
@@ -149,14 +149,14 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     @Override
     public final V put(K key, V value) {
-        w.lock();
+        writeLock.lock();
         try {
             touchUnderWriteLock(key);
             var oldValue = forward.put(key, value);
             doPut(key, value, oldValue);
             return oldValue;
         } finally {
-            w.unlock();
+            writeLock.unlock();
         }
     }
 
@@ -167,14 +167,14 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     @Override
     @OverridingMethodsMustInvokeSuper
     public V remove(Object key) {
-        w.lock();
+        writeLock.lock();
         try {
             lastTouch.remove(key);
             V v = forward.remove(key);
             doRemove(key, v);
             return v;
         } finally {
-            w.unlock();
+            writeLock.unlock();
         }
     }
 
@@ -184,25 +184,25 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     @Override
     @OverridingMethodsMustInvokeSuper
     public void putAll(@Nonnull Map<? extends K, ? extends V> m) {
-        w.lock();
+        writeLock.lock();
         try {
             for (Entry<? extends K, ? extends V> entry : m.entrySet()) {
                 put(entry.getKey(), entry.getValue());
             }
         } finally {
-            w.unlock();
+            writeLock.unlock();
         }
     }
 
     @Override
     public final V computeIfAbsent(K key, @Nonnull Function<? super K, ? extends V> mappingFunction) {
-        r.lock();
+        readLock.lock();
         try {
             if (forward.containsKey(key)) return forward.get(key);
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
-        w.lock();
+        writeLock.lock();
         try {
             if (forward.containsKey(key)) return forward.get(key);
 
@@ -211,33 +211,33 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
             put(key, newVal);
             return newVal;
         } finally {
-            w.unlock();
+            writeLock.unlock();
         }
     }
 
     @Override
     public final @Nonnull Set<Entry<K, V>> entrySet() {
-        r.lock();
+        readLock.lock();
         try {
             return Map.copyOf(forward).entrySet();
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
     @Override
     public final @Nonnull Collection<V> values() {
-        r.lock();
+        readLock.lock();
         try {
             return List.copyOf(forward.values());
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
     @OverridingMethodsMustInvokeSuper
     protected final void cleanup() {
-        w.lock();
+        writeLock.lock();
         try {
             final long currentTime = System.currentTimeMillis();
 
@@ -257,7 +257,7 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
             doCleanUp(removed);
         } finally {
-            w.unlock();
+            writeLock.unlock();
         }
     }
 
@@ -266,11 +266,11 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     @Override
     public final boolean isEmpty() {
-        r.lock();
+        readLock.lock();
         try {
             return forward.isEmpty();
         } finally {
-            r.unlock();
+            readLock.unlock();
         }
     }
 
