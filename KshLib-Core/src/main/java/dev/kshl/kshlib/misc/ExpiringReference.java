@@ -1,7 +1,6 @@
 package dev.kshl.kshlib.misc;
 
 import javax.annotation.Nullable;
-
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
@@ -12,41 +11,38 @@ public class ExpiringReference<T> {
 
     public ExpiringReference(T t, long ttl) {
         this.ttl = ttl;
+        set(t);
     }
 
-    public void set(@Nullable T value) {
+    public synchronized void set(@Nullable T value) {
         this.value = value;
         timeSet = System.currentTimeMillis();
     }
 
-    public @Nullable T get() {
-        synchronized (this) {
-            if (value == null) return null;
-            if (System.currentTimeMillis() - timeSet > ttl) {
-                set(null);
-            }
-            return value;
-        }
+    public synchronized @Nullable T get() {
+        if (value == null) return null;
+        if (isExpired()) return null;
+        return value;
     }
 
-    public T modifyAndGet(UnaryOperator<T> modifier) {
-        synchronized (this) {
-            T t;
-            set(t = modifier.apply(get()));
-            return t;
-        }
+    public synchronized T modifyAndGet(UnaryOperator<T> modifier) {
+        T t;
+        set(t = modifier.apply(get()));
+        return t;
     }
 
-    public void modify(UnaryOperator<T> modifier) {
+    public synchronized void modify(UnaryOperator<T> modifier) {
         modifyAndGet(modifier);
     }
 
-    public T computeIfNull(Supplier<T> supplier) {
-        synchronized (this) {
-            T value = get();
-            if (value != null) return get();
-            set(value = supplier.get());
-            return value;
-        }
+    public synchronized T computeIfNull(Supplier<T> supplier) {
+        T value = get();
+        if (value != null) return get();
+        set(value = supplier.get());
+        return value;
+    }
+
+    public synchronized boolean isExpired() {
+        return System.currentTimeMillis() - timeSet > ttl;
     }
 }
