@@ -1,13 +1,20 @@
 package dev.kshl.kshlib.misc;
 
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 class MapCacheTest {
     MapCache<String, Integer> cache;
@@ -28,7 +35,7 @@ class MapCacheTest {
         long end = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < end) {
             if (cond.getAsBoolean()) return;
-            try { Thread.sleep(5); } catch (InterruptedException ignored) {}
+            sleep(5);
             if (tick != null) tick.run();
         }
         fail("Condition not met within " + timeout.toMillis() + "ms");
@@ -56,8 +63,14 @@ class MapCacheTest {
     @Test
     void computeIfAbsent_onlyOnce_and_nullIgnored() {
         AtomicInteger calls = new AtomicInteger();
-        Integer v1 = cache.computeIfAbsent("x", k -> { calls.incrementAndGet(); return 42; });
-        Integer v2 = cache.computeIfAbsent("x", k -> { calls.incrementAndGet(); return 24; });
+        Integer v1 = cache.computeIfAbsent("x", k -> {
+            calls.incrementAndGet();
+            return 42;
+        });
+        Integer v2 = cache.computeIfAbsent("x", k -> {
+            calls.incrementAndGet();
+            return 24;
+        });
         assertEquals(42, v1);
         assertEquals(42, v2);
         assertEquals(1, calls.get());
@@ -91,26 +104,57 @@ class MapCacheTest {
         cache.put("a", 1);
 
         // touch mid-way; should extend life
-        try { Thread.sleep(ttl / 2); } catch (InterruptedException ignored) {}
+        sleep(ttl / 2);
         assertEquals(1, cache.get("a"));
 
         // after another ~half ttl, still present
-        try { Thread.sleep(ttl / 2); } catch (InterruptedException ignored) {}
+        sleep(ttl / 2);
+        assertTrue(cache.containsKey("a"));
+
+        // after another ~half ttl, still present
+        sleep(ttl / 2);
         assertTrue(cache.containsKey("a"));
 
         // wait > ttl again; should eventually be gone by cleaner
-        awaitTrue(Duration.ofMillis(500), null, () -> !cache.containsKey("a"));
+        awaitTrue(Duration.ofMillis(500), null, () -> !cache.containsKey("a", false));
+    }
+
+    @Test
+    void ttl_expires_unless_touched_by_computeIfAbsent() {
+        cache.put("a", 1);
+
+        // touch mid-way; should extend life
+        sleep(ttl / 2);
+        assertEquals(1, cache.computeIfAbsent("a", u -> 0));
+
+        // after another ~half ttl, still present
+        sleep(ttl / 2);
+        assertEquals(1, cache.computeIfAbsent("a", u -> 0));
+
+        // after another ~half ttl, still present
+        sleep(ttl / 2);
+        assertEquals(1, cache.computeIfAbsent("a", u -> 0));
+
+        // wait > ttl again; should eventually be gone by cleaner
+        awaitTrue(Duration.ofMillis(500), null, () -> !cache.containsKey("a", false));
     }
 
     @Test
     void put_then_no_touch_expires() {
         cache.put("z", 9);
-        awaitTrue(Duration.ofMillis(500), null, () -> !cache.containsKey("z"));
+        awaitTrue(Duration.ofMillis(500), null, () -> !cache.containsKey("z", false));
     }
 
     @Test
     void shutdown_is_idempotent() {
         cache.shutdown();
         cache.shutdown();
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ignored) {
+        }
     }
 }

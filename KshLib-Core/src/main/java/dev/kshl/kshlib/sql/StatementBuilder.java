@@ -2,7 +2,7 @@ package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunction;
-import dev.kshl.kshlib.function.ResultSetConnectionFunction;
+import dev.kshl.kshlib.function.ConnectionResultSetFunction;
 import dev.kshl.kshlib.function.ResultSetFunction;
 import lombok.Getter;
 
@@ -40,7 +40,7 @@ public class StatementBuilder<T> {
         this(connectionManager, statement, (connection, resultSet) -> resultSetFunction.apply(resultSet));
     }
 
-    StatementBuilder(ConnectionManager connectionManager, String statement, ResultSetConnectionFunction<T> resultSetFunction) {
+    StatementBuilder(ConnectionManager connectionManager, String statement, ConnectionResultSetFunction<T> resultSetFunction) {
         this(FunctionType.RESULT_SET, connectionManager, Objects.requireNonNull(statement, "Statement must not be null"), null, resultSetFunction);
     }
 
@@ -52,7 +52,7 @@ public class StatementBuilder<T> {
                              ConnectionManager connectionManager,
                              String statement,
                              ConnectionFunction<T> connectionFunction,
-                             ResultSetConnectionFunction<T> resultSetFunction) {
+                             ConnectionResultSetFunction<T> resultSetFunction) {
         this.functionType = functionType;
         this.connectionManager = connectionManager;
         if (resultSetFunction != null) {
@@ -138,7 +138,7 @@ public class StatementBuilder<T> {
         used = true;
     }
 
-    private ConnectionFunction<T> adaptToConnection(String statement, ResultSetConnectionFunction<T> resultSetFunction) {
+    private ConnectionFunction<T> adaptToConnection(String statement, ConnectionResultSetFunction<T> resultSetFunction) {
         return connection -> {
             connectionManager.debugSQLStatement((readOnly ? "[READONLY] " : "") + statement, args);
             PreparedStatement preparedStatement;

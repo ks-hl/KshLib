@@ -5,10 +5,15 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 
 public final class ConcurrentArrayList<E> implements List<E> {
     private final ReentrantReadWriteLock.ReadLock r;
@@ -281,5 +286,49 @@ public final class ConcurrentArrayList<E> implements List<E> {
         }
     }
 
+    @Override
+    public boolean removeIf(@Nonnull Predicate<? super E> filter) {
+        w.lock();
+        try {
+            return list.removeIf(filter);
+        } finally {
+            w.unlock();
+        }
+    }
 
+    @Override
+    public void forEach(@Nonnull Consumer<? super E> action) {
+        r.lock();
+        try {
+            list.forEach(action);
+        } finally {
+            r.unlock();
+        }
+    }
+
+    @Override
+    public void replaceAll(@Nonnull UnaryOperator<E> operator) {
+        w.lock();
+        try {
+            list.replaceAll(operator);
+        } finally {
+            w.unlock();
+        }
+    }
+
+    @Override
+    public void sort(Comparator<? super E> c) {
+        w.lock();
+        try {
+            list.sort(c);
+        } finally {
+            w.unlock();
+        }
+    }
+
+    @Override
+    @Nonnull
+    public Stream<E> stream() {
+        return snapshot().stream();
+    }
 }

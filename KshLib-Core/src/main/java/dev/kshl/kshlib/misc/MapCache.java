@@ -36,8 +36,9 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     final HashMap<K, V> forward = new HashMap<>();
     private final Map<Object, Long> lastTouch = new ConcurrentHashMap<>();
 
-    final ReentrantReadWriteLock.ReadLock readLock;
-    final ReentrantReadWriteLock.WriteLock writeLock;
+    final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+    final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
 
     private final ScheduledFuture<?> cleanupFuture;
 
@@ -49,10 +50,6 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
         if (this.timeToLive > TimeUnit.DAYS.toMillis(7)) throw new IllegalArgumentException("timeToLive must be less than 1 week");
         long interval = timeUnit.toNanos(timeToLive) / 10;
         cleanupFuture = executor.scheduleAtFixedRate(this::cleanup, interval, interval, TimeUnit.NANOSECONDS);
-
-        var rw = new ReentrantReadWriteLock();
-        readLock = rw.readLock();
-        writeLock = rw.writeLock();
     }
 
     public MapCache(long timeToLiveMillis) {
@@ -62,7 +59,7 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     @Override
     @OverridingMethodsMustInvokeSuper
     public final void clear() {
-        writeLock.lock();
+        lockWriteLock();
         try {
             forward.clear();
             lastTouch.clear();
@@ -98,11 +95,17 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     @Override
     public final boolean containsKey(Object key) {
+        return containsKey(key, true);
+    }
+
+    public final boolean containsKey(Object key, boolean touch) {
         readLock.lock();
         try {
+            //noinspection SuspiciousMethodCalls
             return forward.containsKey(key);
         } finally {
             readLock.unlock();
+            if (touch) touch(key);
         }
     }
 
@@ -118,24 +121,35 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     @Override
     public final V get(Object key) {
+        return get(key, true);
+    }
+
+    public final V get(Object key, boolean touch) {
         readLock.lock();
         V value = null;
         try {
+            //noinspection SuspiciousMethodCalls
             return value = forward.get(key);
         } finally {
             readLock.unlock();
 
-            if (value != null && needTouch(key)) {
-                writeLock.lock();
-                try {
-                    //noinspection SuspiciousMethodCalls
-                    if (forward.containsKey(key)) {
-                        touchUnderWriteLock(key);
-                    }
-                } finally {
-                    writeLock.unlock();
-                }
+            if (touch && value != null) touch(key);
+        }
+    }
+
+    public void touch(Object key) {
+        if (!needTouch(key)) return;
+        if (lock.getReadHoldCount() != 0) {
+            throw new IllegalStateException("Cannot touch while holding a read lock");
+        }
+        lockWriteLock();
+        try {
+            //noinspection SuspiciousMethodCalls
+            if (forward.containsKey(key)) {
+                touchUnderWriteLock(key);
             }
+        } finally {
+            writeLock.unlock();
         }
     }
 
@@ -149,7 +163,7 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     @Override
     public final V put(K key, V value) {
-        writeLock.lock();
+        lockWriteLock();
         try {
             touchUnderWriteLock(key);
             var oldValue = forward.put(key, value);
@@ -167,7 +181,7 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     @Override
     @OverridingMethodsMustInvokeSuper
     public V remove(Object key) {
-        writeLock.lock();
+        lockWriteLock();
         try {
             lastTouch.remove(key);
             V v = forward.remove(key);
@@ -184,7 +198,7 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
     @Override
     @OverridingMethodsMustInvokeSuper
     public void putAll(@Nonnull Map<? extends K, ? extends V> m) {
-        writeLock.lock();
+        lockWriteLock();
         try {
             for (Entry<? extends K, ? extends V> entry : m.entrySet()) {
                 put(entry.getKey(), entry.getValue());
@@ -196,22 +210,26 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     @Override
     public final V computeIfAbsent(K key, @Nonnull Function<? super K, ? extends V> mappingFunction) {
-        readLock.lock();
         try {
-            if (forward.containsKey(key)) return forward.get(key);
-        } finally {
-            readLock.unlock();
-        }
-        writeLock.lock();
-        try {
-            if (forward.containsKey(key)) return forward.get(key);
+            readLock.lock();
+            try {
+                if (forward.containsKey(key)) return forward.get(key);
+            } finally {
+                readLock.unlock();
+            }
+            lockWriteLock();
+            try {
+                if (forward.containsKey(key)) return forward.get(key);
 
-            V newVal = mappingFunction.apply(key);
-            if (newVal == null) return null;
-            put(key, newVal);
-            return newVal;
+                V newVal = mappingFunction.apply(key);
+                if (newVal == null) return null;
+                put(key, newVal);
+                return newVal;
+            } finally {
+                writeLock.unlock();
+            }
         } finally {
-            writeLock.unlock();
+            touch(key);
         }
     }
 
@@ -237,7 +255,7 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     @OverridingMethodsMustInvokeSuper
     protected final void cleanup() {
-        writeLock.lock();
+        lockWriteLock();
         try {
             final long currentTime = System.currentTimeMillis();
 
@@ -276,5 +294,12 @@ public class MapCache<K, V> extends AbstractMap<K, V> {
 
     public void shutdown() {
         cleanupFuture.cancel(false);
+    }
+
+    private void lockWriteLock() {
+        if (lock.getReadHoldCount() != 0) {
+            throw new IllegalStateException("Cannot lock while holding a read lock");
+        }
+        writeLock.lock();
     }
 }

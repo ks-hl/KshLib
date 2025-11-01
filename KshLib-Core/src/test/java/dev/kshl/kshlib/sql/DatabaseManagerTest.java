@@ -2,6 +2,7 @@ package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionFunction;
+import dev.kshl.kshlib.function.ResultSetConsumer;
 import dev.kshl.kshlib.function.ResultSetFunction;
 import dev.kshl.kshlib.function.ThrowingConsumer;
 import org.junit.jupiter.api.Test;
@@ -258,5 +259,13 @@ public class DatabaseManagerTest {
             sql.whenInitialized().thenRun(() -> touched.set(true));
         }
         assertTrue(touched.get());
+    }
+
+    @DatabaseTest
+    public void testResultSetConnection(ConnectionManager sql) throws SQLException, BusyException {
+        sql.acceptResultSet("SELECT 1", (connection, rs) -> {
+            assertTrue(rs.next());
+            sql.query(connection, "SELECT 1", (ResultSetConsumer) rs2 -> assertTrue(rs2.next()));
+        }).executeQuery(1);
     }
 }

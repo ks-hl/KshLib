@@ -3,6 +3,8 @@ package dev.kshl.kshlib.sql;
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionConsumer;
 import dev.kshl.kshlib.function.ConnectionFunction;
+import dev.kshl.kshlib.function.ConnectionResultSetConsumer;
+import dev.kshl.kshlib.function.ConnectionResultSetFunction;
 import dev.kshl.kshlib.function.ResultSetConsumer;
 import dev.kshl.kshlib.function.ResultSetFunction;
 import dev.kshl.kshlib.function.ThrowingFunction;
@@ -749,6 +751,25 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
     public StatementBuilder<Void> acceptResultSet(String statement, ResultSetConsumer consumer) {
         return applyResultSet(statement, rs -> {
             consumer.consume(rs);
+            return null;
+        });
+    }
+
+    /**
+     * Starts the build process for a statement which provides a ResultSet after executing the provided statement string in the specified way and returns {@param T}
+     */
+    @CheckReturnValue
+    public <T> StatementBuilder<T> applyResultSet(String statement, ConnectionResultSetFunction<T> function) {
+        return new StatementBuilder<>(this, statement, function);
+    }
+
+    /**
+     * Starts the build process for a statement which provides a ResultSet after executing the provided statement string in the specified way
+     */
+    @CheckReturnValue
+    public StatementBuilder<Void> acceptResultSet(String statement, ConnectionResultSetConsumer consumer) {
+        return applyResultSet(statement, (connection, rs) -> {
+            consumer.consume(connection, rs);
             return null;
         });
     }

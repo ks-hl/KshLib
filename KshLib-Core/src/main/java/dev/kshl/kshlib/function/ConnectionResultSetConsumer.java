@@ -5,6 +5,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 @FunctionalInterface
-public interface ResultSetConnectionConsumer {
+public interface ConnectionResultSetConsumer {
     void consume(Connection connection, ResultSet resultSet) throws SQLException;
 }
