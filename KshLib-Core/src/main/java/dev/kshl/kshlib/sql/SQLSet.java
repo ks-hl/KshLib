@@ -2,6 +2,7 @@ package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
 import dev.kshl.kshlib.function.ConnectionConsumer;
+import dev.kshl.kshlib.function.ConnectionFunction;
 import dev.kshl.kshlib.misc.MapCache;
 
 import javax.annotation.Nullable;
@@ -40,30 +41,35 @@ public abstract class SQLSet<T> {
     }
 
     public boolean contains(T value) throws SQLException, BusyException {
+        return connectionManager.apply(connection -> contains(connection, value)).readOnly().executeQuery(3000L);
+    }
+
+    public boolean contains(Connection connection, T value) throws SQLException {
         var cached = getCached(value);
         if (cached != null) return cached;
-        boolean contains = connectionManager.query("SELECT * FROM " + table + " WHERE value=?", ResultSet::next, 10000L, value);
+        boolean contains = connectionManager.query(connection, "SELECT * FROM " + table + " WHERE value=?", ResultSet::next, value);
         cache(value, contains);
         return contains;
     }
 
     public boolean add(T value) throws SQLException, BusyException {
-        var cached = getCached(value);
-        if (cached != null && cached) return false;
-        try {
-            connectionManager.execute("INSERT INTO " + table + " (value) VALUES (?)", 10000L, value);
-            cache(value, true);
-            return true;
-        } catch (SQLException e) {
-            if (!connectionManager.isConstraintViolation(e)) throw e;
-            return false;
-        }
+        return connectionManager.execute((ConnectionFunction<Boolean>) connection -> add(connection, value), 3000L);
+    }
+
+    public boolean add(Connection connection, T value) throws SQLException {
+        if (getCached(value) == Boolean.TRUE) return false;
+        boolean added = connectionManager.executeReturnRows(connection, connectionManager.getInsertOrIgnore() + " INTO " + table + " (value) VALUES (?)", value) > 0;
+        cache(value, true);
+        return added;
     }
 
     public boolean remove(T value) throws SQLException, BusyException {
-        var cached = getCached(value);
-        if (cached != null && !cached) return false;
-        boolean change = connectionManager.executeReturnRows("DELETE FROM " + table + " WHERE value=?", 10000L, value) > 0;
+        return connectionManager.execute((ConnectionFunction<Boolean>) connection -> remove(connection, value), 3000L);
+    }
+
+    public boolean remove(Connection connection, T value) throws SQLException {
+        if (getCached(value) == Boolean.FALSE) return false;
+        boolean change = connectionManager.executeReturnRows(connection, "DELETE FROM " + table + " WHERE value=?", value) > 0;
         cache(value, false);
         return change;
     }

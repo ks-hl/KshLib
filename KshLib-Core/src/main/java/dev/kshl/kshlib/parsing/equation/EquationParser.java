@@ -14,8 +14,9 @@ import dev.kshl.kshlib.parsing.equation.node.TrinaryNode;
 import dev.kshl.kshlib.parsing.equation.node.UnaryMinusNode;
 import dev.kshl.kshlib.parsing.equation.node.UnaryNode;
 import dev.kshl.kshlib.parsing.equation.node.VariableNode;
-import javax.annotation.Nullable;
 
+import javax.annotation.Nullable;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,7 @@ import java.util.function.Supplier;
  * <a href="https://stackoverflow.com/questions/3422673/how-to-evaluate-a-math-expression-given-in-string-form">Partial Credit</a>
  */
 public class EquationParser extends GenericParser {
+    private static final SecureRandom secureRandom = new SecureRandom();
     static final Map<String, Double> CONSTANTS = Map.of( //
             "pi", Math.PI, //
             "e", Math.E, //
@@ -185,6 +187,7 @@ public class EquationParser extends GenericParser {
             return switch (parameters.size()) {
                 case 0 -> switch (functionName) {
                     case "rand", "random" -> new NullaryNode(Math::random, functionName, params);
+                    case "securerandom", "secure_random", "secrand" -> new NullaryNode(secureRandom::nextDouble, functionName, params);
                     default -> throw unknownFunction.get();
                 };
                 case 1 -> {

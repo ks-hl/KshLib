@@ -1,6 +1,7 @@
 package dev.kshl.kshlib.sql;
 
 import dev.kshl.kshlib.exceptions.BusyException;
+import dev.kshl.kshlib.function.ConnectionConsumer;
 import dev.kshl.kshlib.function.ConnectionFunction;
 import dev.kshl.kshlib.misc.BiDiMapCache;
 import dev.kshl.kshlib.misc.UUIDHelper;
@@ -9,6 +10,10 @@ import javax.annotation.Nonnull;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -178,6 +183,40 @@ public abstract class SQLIDManager<V> {
         }, id);
     }
 
+    public void putAll(Collection<V> values) throws SQLException, BusyException {
+        sql.execute((ConnectionConsumer) connection -> putAll(connection, values), 3000L);
+    }
+
+    public void putAll(Connection connection, Collection<V> values) throws SQLException {
+        sql.executeBatch(connection, sql.getInsertOrIgnore() + " INTO " + table + " (value) VALUES (?)", values, v -> List.of(toDatabaseObject(v)));
+    }
+
+    public Map<V, Integer> getAll(Collection<V> values) throws SQLException, BusyException {
+        return sql.execute((ConnectionFunction<Map<V, Integer>>) connection -> getAll(connection, values), 3000L);
+    }
+
+    public Map<V, Integer> getAll(Connection connection, Collection<V> values) throws SQLException {
+        Map<V, Integer> out = new HashMap<>();
+        values.forEach(v -> out.put(v, null));
+        sql.query(connection, "SELECT id,value FROM " + table + " WHERE value IN (" + toDatabaseObject(values) + ")", rs -> {
+            while (rs.next()) {
+                out.put(getValue(rs, 2), rs.getInt(1));
+            }
+        });
+        return out;
+    }
+
+    public Map<V, Integer> getOrInsertAll(Collection<V> values) throws SQLException, BusyException {
+        return sql.execute((ConnectionFunction<Map<V, Integer>>) connection -> getOrInsertAll(connection, values), 3000L);
+    }
+
+    public Map<V, Integer> getOrInsertAll(Connection connection, Collection<V> values) throws SQLException {
+        return sql.executeTransaction(connection, () -> {
+            putAll(connection, values);
+            return getAll(connection, values);
+        });
+    }
+
     protected void cache(int id, V value) {
         if (id > 0) cache.put(id, value);
     }
@@ -202,6 +241,8 @@ public abstract class SQLIDManager<V> {
 
     protected abstract Object toDatabaseObject(V value);
 
+    protected abstract Object toDatabaseObject(Collection<V> values);
+
     protected abstract boolean isInvalid(V v);
 
     public static class Str extends SQLIDManager<String> {
@@ -222,6 +263,12 @@ public abstract class SQLIDManager<V> {
         @Override
         protected Object toDatabaseObject(String value) {
             return value;
+        }
+
+        @Override
+        protected Object toDatabaseObject(Collection<String> values) {
+            if (values.isEmpty()) throw new IllegalArgumentException("Cannot create SQL string from empty collection");
+            return values.stream().map(s -> "'" + s + "'").reduce((a, b) -> a + "," + b).orElseThrow();
         }
 
         @Override
@@ -250,6 +297,12 @@ public abstract class SQLIDManager<V> {
         protected Object toDatabaseObject(Long value) {
             return value;
         }
+
+        @Override
+        protected Object toDatabaseObject(Collection<Long> values) {
+            if (values.isEmpty()) throw new IllegalArgumentException("Cannot create SQL string from empty collection");
+            return values.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElseThrow();
+        }
     }
 
     public static class UUIDText extends SQLIDManager<java.util.UUID> {
@@ -274,6 +327,12 @@ public abstract class SQLIDManager<V> {
         @Override
         protected Object toDatabaseObject(UUID value) {
             return Objects.requireNonNull(value).toString();
+        }
+
+        @Override
+        protected Object toDatabaseObject(Collection<UUID> values) {
+            if (values.isEmpty()) throw new IllegalArgumentException("Cannot create SQL string from empty collection");
+            return values.stream().map(u -> "'" + u + "'").reduce((a, b) -> a + "," + b).orElseThrow();
         }
     }
 }

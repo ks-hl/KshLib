@@ -59,7 +59,7 @@ public class SQLUsernameManager implements ISQLManager {
                     )""", table, sql.isMySQL() ? " COLLATE utf8mb4_general_ci" : "")); // utf8mb4_general_ci gives case-insensitive indexing to MySQL
 
             if (needsMigration) {
-                sql.execute(connection, "INSERT OR IGNORE INTO " + table + " SELECT * FROM " + table + "_temp ORDER BY TIME DESC");
+                sql.execute(connection, sql.getInsertOrIgnore() + " INTO " + table + " SELECT * FROM " + table + "_temp ORDER BY TIME DESC");
                 sql.execute(connection, "DROP TABLE IF EXISTS " + table + "_temp");
             }
 

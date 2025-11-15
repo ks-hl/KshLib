@@ -3,6 +3,8 @@ package dev.kshl.kshlib.sql;
 import dev.kshl.kshlib.exceptions.BusyException;
 
 import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,5 +50,22 @@ public class SQLIDManagerTest {
 
         assertEquals(uid1, idManagerUID.getIDOpt(val1, false).orElse(null));
         assertEquals(uid2, idManagerUID.getIDOpt(val2, false).orElse(null));
+    }
+
+    @DatabaseTest
+    public void testPutAllGetAll(ConnectionManager connectionManager) throws SQLException, BusyException {
+        String table = "put_all_get_all";
+        connectionManager.execute("DROP TABLE IF EXISTS " + table, 100);
+        SQLIDManager.Str idManagerUID = new SQLIDManager.Str(connectionManager, table);
+        connectionManager.execute(idManagerUID::init, 100);
+
+        List<String> values = List.of("a", "b", "c");
+        idManagerUID.putAll(values);
+
+        Map<String,Integer> ids = idManagerUID.getAll(values);
+        assertEquals(3, ids.size());
+        assertEquals(1, ids.get("a").intValue());
+        assertEquals(2, ids.get("b").intValue());
+        assertEquals(3, ids.get("c").intValue());
     }
 }

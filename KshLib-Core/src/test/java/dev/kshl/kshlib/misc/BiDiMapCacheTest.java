@@ -84,7 +84,7 @@ class BiDiMapCacheTest {
         cache.put("k1", 100);
         cache.put("k2", 100);
         awaitTrue(Duration.ofMillis(600), null,
-                () -> !cache.containsKey("k1") && !cache.containsKey("k2") && !cache.containsValue(100));
+                () -> !cache.containsKey("k1", false) && !cache.containsKey("k2", false) && !cache.containsValue(100));
     }
 
     @Test
@@ -105,7 +105,7 @@ class BiDiMapCacheTest {
         assertTrue(cache.containsKey("p"));
 
         // then wait > ttl again; now it should expire
-        awaitTrue(Duration.ofMillis(600), null, () -> !cache.containsKey("p") && !cache.containsValue(7));
+        awaitTrue(Duration.ofMillis(600), null, () -> !cache.containsKey("p", false) && !cache.containsValue(7));
     }
 
     @Test

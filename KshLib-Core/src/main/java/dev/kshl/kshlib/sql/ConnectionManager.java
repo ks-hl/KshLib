@@ -526,6 +526,22 @@ public abstract class ConnectionManager implements Closeable, AutoCloseable {
         }
     }
 
+    public final String getDropIndexStatement(String index, String table, boolean ifExists) {
+        String base = "DROP INDEX " + (ifExists ? "IF EXISTS " : "") + index;
+        if (isMySQL()) {
+            return base + " ON " + table;
+        } else {
+            return base;
+        }
+    }
+
+    /**
+     * @return "INSERT OR IGNORE" or "INSERT IGNORE" for SQLite or MySQL respectively
+     */
+    public final String getInsertOrIgnore() {
+        return "INSERT " + (isMySQL() ? "" : "OR ") + "IGNORE";
+    }
+
     public void prepare(PreparedStatement preparedStatement, Object... args) throws SQLException {
         if (args == null) return;
 

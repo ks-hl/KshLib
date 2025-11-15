@@ -1,19 +1,18 @@
 package dev.kshl.kshlib.spigot;
 
+import de.tr7zw.nbtapi.NBT;
 import de.tr7zw.nbtapi.NBTCompound;
 import de.tr7zw.nbtapi.NBTCompoundList;
-import de.tr7zw.nbtapi.NBTContainer;
 import de.tr7zw.nbtapi.NBTItem;
-import de.tr7zw.nbtapi.NBTListCompound;
 import de.tr7zw.nbtapi.NBTTileEntity;
+import de.tr7zw.nbtapi.iface.ReadWriteNBT;
+import de.tr7zw.nbtapi.iface.ReadWriteNBTCompoundList;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.inventory.ItemStack;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Base64;
-import java.util.UUID;
 
 public class SkullUtil {
     public static ItemStack createHeadItem(String base64) {
@@ -24,9 +23,9 @@ public class SkullUtil {
 
     public static void setTexture(ItemStack item, String base64) {
         validateType(item.getType());
-        NBTItem headNBT = new NBTItem(item);
-        setTexture(headNBT, base64);
-        headNBT.applyNBT(item);
+        NBT.modifyComponents(item, nbt -> {
+            setTexture(nbt, base64);
+        });
     }
 
     public static void setTexture(Block block, String base64) {
@@ -51,18 +50,13 @@ public class SkullUtil {
         throw new IllegalArgumentException("Cannot set skull texture of " + material);
     }
 
-    private static void setTexture(NBTCompound baseNBT, String base64) {
-        base64 = filterTexture(base64);
-
-        NBTCompound baseNBTToMerge = new NBTContainer();
-        NBTCompound skullOwner = baseNBTToMerge.getOrCreateCompound("SkullOwner");
-        skullOwner.setUUID("Id", UUID.randomUUID());
-        NBTCompound properties = skullOwner.getOrCreateCompound("Properties");
-        NBTCompoundList textures = properties.getCompoundList("textures");
-        textures.clear();
-        NBTListCompound texture = textures.addCompound();
-        texture.setString("Value", base64);
-        baseNBT.mergeCompound(baseNBTToMerge);
+    private static void setTexture(ReadWriteNBT baseNBT, String base64) {
+        ReadWriteNBT profile = baseNBT.resolveOrCreateCompound("profile");
+        ReadWriteNBTCompoundList properties = profile.getCompoundList("properties");
+        properties.clear();
+        ReadWriteNBT texture = properties.addCompound();
+        texture.setString("name", "textures");
+        texture.setString("value", base64);
     }
 
     private static String getTexture(NBTCompound baseNBT) {
@@ -79,21 +73,6 @@ public class SkullUtil {
         if (texture == null) return null;
 
         return texture.getString("Value");
-    }
-
-    /**
-     * Strips any extra data from the encoded texture such as signatureRequired, profileName, etc.
-     */
-    public static String filterTexture(String texture) {
-        String jsonTextIn = new String(Base64.getDecoder().decode(texture));
-        JSONObject jsonIn;
-        try {
-            jsonIn = new JSONObject(jsonTextIn);
-            JSONObject jsonOut = new JSONObject().put("textures", new JSONObject().put("SKIN", jsonIn.getJSONObject("textures").getJSONObject("SKIN")));
-            return Base64.getEncoder().encodeToString(jsonOut.toString().getBytes());
-        } catch (JSONException e) {
-            throw new JSONException(jsonTextIn, e);
-        }
     }
 
     public static String getTextureFromMojangID(String mojangID) {
